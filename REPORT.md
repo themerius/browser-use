@@ -121,7 +121,48 @@
 - **Key insight from COLM 2025 "Illusion of Progress" paper**: high benchmark scores don't yet translate to reliable real-world automation on diverse, live websites
 - **Remaining gap**: deep visual understanding, common-sense reasoning, policy compliance
 
-## 7. Field Outlook (2026 and Beyond)
+## 7. Parallel to Screen Reader Navigation
+
+- **The deep structural analogy**
+  - Screen readers and LLM web agents solve the same fundamental problem: making websites navigable without relying on visual rendering
+  - Both consume the **accessibility tree** as their primary representation — screen readers via platform APIs (MSAA/UIA, ATK, NSAccessibility), browser-use via CDP's `Accessibility.getFullAXTree`
+  - Both read the same four properties per element: **role**, **name**, **state**, **value**
+  - Both struggle with the same failure modes: non-semantic HTML, missing ARIA, canvas/WebGL, CAPTCHAs
+
+- **How screen readers represent a page**
+  - Build a **virtual buffer** (linearized text document) from the accessibility tree
+  - Each element announced as: role → name → state → value (e.g., "Heading level 2, Product Features")
+  - **Landmark roles** provide structural scaffolding: `<main>`, `<nav>`, `<aside>`, `<footer>` → direct jump targets
+  - **Three interaction modes**: browse mode (virtual cursor, read-only), focus mode (typing into form fields), application mode (custom widget keyboard handling)
+
+- **What browser-use shares with screen readers**
+  - Both filter/compress thousands of DOM nodes into a navigable subset
+  - Both face the "what's interactive?" detection problem — a `<div onclick="...">` without `role="button"` is invisible to both
+  - Both degrade on poorly-structured HTML: no headings → no structural outline; no landmarks → no region-based navigation
+  - Both are blind to canvas/WebGL content, custom widgets without ARIA, and visual-only state indicators
+  - WCAG compliance benefits both equally — semantic HTML is the shared API
+
+- **Where they diverge**
+  - **Navigation model**: screen readers offer ~20 single-key shortcuts (H=heading, D=landmark, F=form field, K=link, T=table, B=button) for O(1) structural traversal; LLM agents have no such primitives — they scan the full serialized representation every step
+  - **Sequential vs. snapshot**: screen readers present content one element at a time (~150 words/min via speech); LLM agents receive the entire page state in a single text block
+  - **Human-driven vs. autonomous**: screen readers are instruments that amplify human agency; LLM agents are both the perceiver and the decision-maker
+  - **Dynamic content**: screen readers handle updates via ARIA live regions (`aria-live="polite"` / `"assertive"`); LLM agents re-capture the entire page state — no incremental update mechanism
+
+- **What LLM agents could learn from screen reader design**
+  - **Landmark-based skip navigation**: collapse repeated nav/header/footer regions between steps instead of re-serializing them ("NAV: 12 links, same as previous step")
+  - **Heading hierarchy as table of contents**: present a structural outline at the top of each snapshot before the full element list
+  - **Browse/focus mode split**: two-phase approach — first a compressed structural overview (~500 tokens), then detailed view of a specific region on demand. Would dramatically reduce per-step token consumption
+  - **Live region semantics**: use `aria-live` and `aria-busy` to detect when content is still loading or has changed, rather than blindly re-snapshotting
+  - **Richer state announcements**: more consistent exposure of `aria-invalid`, `aria-busy`, `aria-errormessage` to help agents understand form validation failures and loading states
+
+- **The curb cut effect**
+  - Accessibility improvements designed for disabled users directly benefit AI agents — and vice versa
+  - WCAG-compliant sites show ~23% higher organic traffic (SEMrush), partly because crawlers and AI agents reward clean semantic structure
+  - Agents using accessibility tree data complete tasks at ~85% success rate vs. significantly lower for vision-only approaches (Agent-E benchmark data)
+  - Emerging term: **AIO (Artificial Intelligence Optimization)** — the recognition that accessibility work is simultaneously AI agent infrastructure
+  - LLMs are also being used to *improve* accessibility (arXiv 2502.18701): restructuring HTML for better heading hierarchy and labeling, which benefits both screen readers and agents
+
+## 8. Field Outlook (2026 and Beyond)
 
 - **Hybrid DOM+vision is converging as the winning approach**
   - Pure text misses visual context; pure vision is too expensive and imprecise for grounding
