@@ -1,0 +1,162 @@
+name: Download All Invoices
+task: |
+  Navigate to the paginated invoice list starting at page 1.
+  Download all invoice PDFs across all pages.
+  Report the total count of downloaded files and all invoice numbers.
+fixture: download_all_invoices
+max_steps: 25
+expected_result:
+  contains:
+    - "8"
+  max_steps: 20
+  files_downloaded: 8
+mock_actions:
+  # Page 1: download 3 invoices
+  - |
+    {
+      "thinking": "On page 1 of invoices. I see 3 invoices. Download the first one.",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "Page 1 of 3, invoices: INV-2026-008, INV-2026-007, INV-2026-006",
+      "next_goal": "Download first invoice PDF",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "First PDF downloaded. Download the second one.",
+      "evaluation_previous_goal": "Downloaded INV-2026-008",
+      "memory": "Downloaded: INV-2026-008. Still on page 1.",
+      "next_goal": "Go back to invoice list and download second invoice",
+      "action": [{"go_back": {}}]
+    }
+  - |
+    {
+      "thinking": "Back on page 1. Click second invoice download.",
+      "evaluation_previous_goal": "Navigated back to invoice list",
+      "memory": "Downloaded: INV-2026-008. Need INV-2026-007 next.",
+      "next_goal": "Download second invoice PDF",
+      "action": [{"click": {"index": 2}}]
+    }
+  - |
+    {
+      "thinking": "Second PDF downloaded. Get the third.",
+      "evaluation_previous_goal": "Downloaded INV-2026-007",
+      "memory": "Downloaded: INV-2026-008, INV-2026-007",
+      "next_goal": "Go back and download third invoice",
+      "action": [{"go_back": {}}]
+    }
+  - |
+    {
+      "thinking": "Download third invoice on page 1.",
+      "evaluation_previous_goal": "Back on page 1",
+      "memory": "Downloaded: INV-2026-008, INV-2026-007",
+      "next_goal": "Download third invoice PDF",
+      "action": [{"click": {"index": 3}}]
+    }
+  - |
+    {
+      "thinking": "Third PDF downloaded. Go back and navigate to page 2.",
+      "evaluation_previous_goal": "Downloaded INV-2026-006",
+      "memory": "Downloaded: INV-2026-008, INV-2026-007, INV-2026-006. Page 1 done.",
+      "next_goal": "Go back to invoice list and navigate to page 2",
+      "action": [{"go_back": {}}]
+    }
+  # Navigate to page 2
+  - |
+    {
+      "thinking": "Click Next Page to go to page 2.",
+      "evaluation_previous_goal": "Back on page 1 invoice list",
+      "memory": "3/8 downloaded. Need to go to page 2.",
+      "next_goal": "Click Next Page link",
+      "action": [{"click": {"index": 4}}]
+    }
+  # Page 2: download 3 invoices
+  - |
+    {
+      "thinking": "On page 2. Download first invoice.",
+      "evaluation_previous_goal": "Navigated to page 2",
+      "memory": "Page 2: INV-2026-005, INV-2026-004, INV-2026-003. 3/8 downloaded.",
+      "next_goal": "Download first invoice on page 2",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "Downloaded. Go back for next.",
+      "evaluation_previous_goal": "Downloaded INV-2026-005",
+      "memory": "Downloaded: 4/8",
+      "next_goal": "Go back and download next",
+      "action": [{"go_back": {}}]
+    }
+  - |
+    {
+      "thinking": "Download second invoice on page 2.",
+      "evaluation_previous_goal": "Back on page 2",
+      "memory": "Downloaded: 4/8",
+      "next_goal": "Download second invoice",
+      "action": [{"click": {"index": 2}}]
+    }
+  - |
+    {
+      "thinking": "Go back for third invoice on page 2.",
+      "evaluation_previous_goal": "Downloaded INV-2026-004",
+      "memory": "Downloaded: 5/8",
+      "next_goal": "Go back and download third",
+      "action": [{"go_back": {}}]
+    }
+  - |
+    {
+      "thinking": "Download third invoice on page 2.",
+      "evaluation_previous_goal": "Back on page 2",
+      "memory": "Downloaded: 5/8",
+      "next_goal": "Download third invoice",
+      "action": [{"click": {"index": 3}}]
+    }
+  - |
+    {
+      "thinking": "Go back and navigate to page 3.",
+      "evaluation_previous_goal": "Downloaded INV-2026-003",
+      "memory": "Downloaded: 6/8. Page 2 done.",
+      "next_goal": "Go back to page 2 list and click Next Page",
+      "action": [{"go_back": {}}]
+    }
+  # Navigate to page 3
+  - |
+    {
+      "thinking": "Click Next Page to go to page 3.",
+      "evaluation_previous_goal": "Back on page 2",
+      "memory": "6/8 downloaded. Need page 3.",
+      "next_goal": "Click Next Page link",
+      "action": [{"click": {"index": 4}}]
+    }
+  # Page 3: download 2 invoices
+  - |
+    {
+      "thinking": "On page 3 (last page). Download first invoice.",
+      "evaluation_previous_goal": "Navigated to page 3",
+      "memory": "Page 3: INV-2026-002, INV-2026-001. 6/8 downloaded.",
+      "next_goal": "Download first invoice on page 3",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "Go back for the last invoice.",
+      "evaluation_previous_goal": "Downloaded INV-2026-002",
+      "memory": "Downloaded: 7/8",
+      "next_goal": "Go back and download last invoice",
+      "action": [{"go_back": {}}]
+    }
+  - |
+    {
+      "thinking": "Download the last invoice.",
+      "evaluation_previous_goal": "Back on page 3",
+      "memory": "Downloaded: 7/8",
+      "next_goal": "Download last invoice",
+      "action": [{"click": {"index": 2}}]
+    }
+  - |
+    {
+      "thinking": "All 8 invoices downloaded across 3 pages.",
+      "evaluation_previous_goal": "Downloaded INV-2026-001",
+      "memory": "All 8 invoices downloaded: INV-2026-008 through INV-2026-001",
+      "next_goal": "Report completion",
+      "action": [{"done": {"text": "Downloaded all 8 invoices: INV-2026-008, INV-2026-007, INV-2026-006, INV-2026-005, INV-2026-004, INV-2026-003, INV-2026-002, INV-2026-001. Total: 8 files.", "success": true}}]
+    }

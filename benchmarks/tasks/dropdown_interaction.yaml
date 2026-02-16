@@ -1,0 +1,35 @@
+name: Dropdown Interaction
+task: |
+  Go to the order form, select the "Pro Plan" from the dropdown,
+  submit the form, and confirm the order was placed.
+fixture: dropdown_interaction
+max_steps: 10
+expected_result:
+  contains:
+    - "Order Confirmed"
+  max_steps: 5
+mock_actions:
+  - |
+    {
+      "thinking": "I need to select Pro Plan from the dropdown",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "On the order form page with a product dropdown",
+      "next_goal": "Select Pro Plan from the dropdown",
+      "action": [{"select_dropdown": {"index": 1, "text": "Pro Plan - $19.99/mo"}}]
+    }
+  - |
+    {
+      "thinking": "Pro Plan selected, now submit the form",
+      "evaluation_previous_goal": "Selected Pro Plan",
+      "memory": "Pro Plan selected in dropdown",
+      "next_goal": "Click the Place Order button",
+      "action": [{"click": {"index": 2}}]
+    }
+  - |
+    {
+      "thinking": "Order confirmed page is showing",
+      "evaluation_previous_goal": "Form submitted",
+      "memory": "Order confirmation page showing success",
+      "next_goal": "Report order confirmation",
+      "action": [{"done": {"text": "Order Confirmed! Your order for the Pro Plan has been placed successfully.", "success": true}}]
+    }

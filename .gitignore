@@ -84,3 +84,12 @@ product_extraction.py
 plot.py
 
 .claude/
+
+# Benchmark reports (generated, not tracked)
+benchmarks/reports/*.md
+benchmarks/reports/*.json
+!benchmarks/reports/.gitkeep
+
+# Allow benchmark baseline/task files to be tracked (override *.json / *.yaml rules)
+!benchmarks/baselines/*.json
+!benchmarks/baselines/.gitkeep

@@ -1,0 +1,36 @@
+name: Navigate Multi Page
+task: |
+  Navigate through a series of pages starting from the home page.
+  Follow the links through each page until you find the secret code,
+  then report what it is.
+fixture: navigate_multi_page
+max_steps: 10
+expected_result:
+  contains:
+    - "BENCHMARK-42"
+  max_steps: 4
+mock_actions:
+  - |
+    {
+      "thinking": "I need to navigate through pages to find the secret code",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "On Page 1 with a link to Page 2",
+      "next_goal": "Click the link to go to Page 2",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "Now on Page 2, need to continue to Page 3",
+      "evaluation_previous_goal": "Navigated to Page 2",
+      "memory": "On Page 2 with a link to Page 3",
+      "next_goal": "Click the link to go to Page 3",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "On Page 3, I can see the secret code: BENCHMARK-42",
+      "evaluation_previous_goal": "Navigated to Page 3",
+      "memory": "Found the secret code on Page 3",
+      "next_goal": "Report the secret code",
+      "action": [{"done": {"text": "The secret code is: BENCHMARK-42", "success": true}}]
+    }
