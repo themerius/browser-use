@@ -1,0 +1,138 @@
+{
+  "model": "gpt-4o-mini",
+  "trials_per_task": 1,
+  "tasks": {
+    "Download All Invoices": {
+      "n_trials": 1,
+      "pass_rate": 0.0,
+      "avg_steps": 26.0,
+      "std_steps": 0.0,
+      "avg_tokens": 674951.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 214.05796909332275,
+      "avg_error_rate": 0.11538461538461539,
+      "action_distribution": {
+        "navigate": 19,
+        "search_page": 15,
+        "find_elements": 7,
+        "done": 1
+      },
+      "files_downloaded_expected": 8,
+      "avg_files_downloaded": 0.0
+    },
+    "Download Newest Invoice": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 11.0,
+      "std_steps": 0.0,
+      "avg_tokens": 778879.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 113.33384251594543,
+      "avg_error_rate": 0.09090909090909091,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "wait": 1,
+        "extract": 1,
+        "input": 10,
+        "write_file": 2,
+        "done": 3
+      },
+      "files_downloaded_expected": 1,
+      "avg_files_downloaded": 2.0
+    },
+    "Dropdown Interaction": {
+      "n_trials": 1,
+      "pass_rate": 0.0,
+      "avg_steps": 3.0,
+      "std_steps": 0.0,
+      "avg_tokens": 165256.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 19.99708914756775,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "done": 1
+      }
+    },
+    "Extract Structured Data": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 90380.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 34.10065960884094,
+      "avg_error_rate": 0.25,
+      "action_distribution": {
+        "navigate": 1,
+        "extract": 1,
+        "done": 1
+      }
+    },
+    "Fill Contact Form": {
+      "n_trials": 1,
+      "pass_rate": 0.0,
+      "avg_steps": 9.0,
+      "std_steps": 0.0,
+      "avg_tokens": 566256.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 94.47513890266418,
+      "avg_error_rate": 0.2222222222222222,
+      "action_distribution": {
+        "navigate": 1,
+        "input": 5,
+        "click": 1,
+        "evaluate": 1,
+        "done": 1
+      }
+    },
+    "Navigate Multi Page": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 7.0,
+      "std_steps": 0.0,
+      "avg_tokens": 133868.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 84.81832361221313,
+      "avg_error_rate": 0.42857142857142855,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 3,
+        "done": 1
+      }
+    },
+    "Search Product": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 202182.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 99.11101579666138,
+      "avg_error_rate": 0.25,
+      "action_distribution": {
+        "navigate": 1,
+        "input": 2,
+        "click": 2,
+        "done": 1
+      }
+    }
+  },
+  "aggregate": {
+    "pass_rate": 0.5714285714285714,
+    "avg_steps": 9.142857142857142,
+    "avg_tokens": 373110.28571428574,
+    "avg_cost": 0.0,
+    "avg_duration": 94.27057695388794
+  },
+  "timestamp": "2026-02-16T18:26:23.710628+00:00"
+}
