@@ -4,7 +4,7 @@
 
 Implement a new serialization mode that presents the DOM as a **hierarchically-grouped, landmark-structured outline** instead of a flat indexed element list. The design borrows directly from screen reader navigation primitives: landmark regions, heading hierarchy, and region-level collapsing.
 
-**The thesis** (REPORT.md §8): `required_model_size ≈ f(task_complexity / input_structure_quality)`. Better-structured input reduces apparent task complexity, enabling smaller models to navigate pages that currently require frontier LLMs. The hierarchical outline is the concrete implementation of "better-structured input."
+**The thesis** (REPORT.md §8): `required_model_size ≈ f(task_complexity / input_structure_quality)`. Better-structured input reduces apparent task complexity. The hierarchical outline is the concrete implementation of "better-structured input." Validation is tiered: (1) outline improves any model at same size, (2) outline + smaller model matches flat + larger model, (3) outline enables 7B-class models to rival 70B+ on structured pages. Tier 1 is the shipping bar.
 
 **What changes**: The serializer output format — from a flat indented element list to a landmark-grouped, heading-annotated outline. Everything upstream (CDP extraction, enhanced DOM tree, AX node enrichment) and downstream (agent prompt consumption, action execution) stays the same.
 
@@ -389,7 +389,15 @@ for model in mock gpt-4o-mini gpt-4o claude-3-haiku claude-3.5-sonnet; do
 done
 ```
 
-**Hypothesis**: `pass_rate(outline, small_model) ≥ pass_rate(flat, large_model)` for at least some task categories. If true, the outline format is a **model size multiplier** — you can use a cheaper model with better input structure.
+**Validation tiers** (each independently valuable, ordered by increasing ambition):
+
+1. **Tier 1 — Same model, outline wins**: `pass_rate(outline, X) > pass_rate(flat, X)` for any model X. Proves the format helps at any scale. **This alone justifies shipping the feature.** Also check secondary metrics: fewer steps, fewer tokens, fewer errors.
+
+2. **Tier 2 — Smaller model matches via outline**: `pass_rate(outline, small) ≈ pass_rate(flat, large)` (e.g., outline + gpt-4o-mini ≈ flat + gpt-4o). Proves structure substitutes for some model capability. **Justifies recommending cheaper models with outline mode.**
+
+3. **Tier 3 — Structure dominates scale**: `pass_rate(outline, 7B) ≥ pass_rate(flat, 70B)`. The moonshot. Proves input structure is a full substitute for massive model scale. Supported by literature (ScribeAgent 7B > GPT-4 on WebArena) but unverified in browser-use's architecture.
+
+Tier 1 is the shipping bar. Tier 2 is the cost optimization story. Tier 3 is the research contribution.
 
 ---
 
@@ -471,7 +479,8 @@ The outline uses markdown-style headings (`##`, `###`) because:
 | Structural navigation | Landmark grouping | Agent can reason "go to MAIN" instead of scanning all elements |
 | Token reduction | Region collapsing between steps | 20–45% fewer tokens per step after step 1 |
 | Heading-based orientation | `##` section headers in output | Agent understands page sections without vision |
-| Small model enablement | Structured input reduces task complexity | Testable: outline + 7B ≥ flat + 70B? |
+| Same-model improvement | Better structure → better reasoning | Tier 1: outline + X > flat + X for any model |
+| Small model enablement | Structured input reduces task complexity | Tier 2: outline + small ≈ flat + large. Tier 3: outline + 7B ≥ flat + 70B |
 | Screen reader parity | `focus_region`, `list_headings` actions | O(1) structural navigation vs O(n) scanning |
 
 ## What This Does NOT Do
@@ -492,6 +501,6 @@ The outline uses markdown-style headings (`##`, `###`) because:
 | Plan 1 → Plan 3 | Plan 1 provides measurement | Plan 1's benchmark suite is how you measure whether the outline actually helps (A/B comparison, model size sweep) |
 | Plan 3 → Plan 1 | Plan 3 provides feature to measure | The outline mode is the first non-trivial feature the benchmark suite evaluates |
 | Plan 2 → Plan 3 | Plan 2 provides external validation | WebArena Verified's 812 tasks provide the scale and external comparability to validate the outline thesis beyond toy benchmarks |
-| Plan 3 → REPORT.md §8 | Plan 3 validates the thesis | If `task_success(outline, 7B) ≥ task_success(flat, 70B)`, the hierarchical outlining thesis is confirmed |
+| Plan 3 → REPORT.md §8 | Plan 3 validates the thesis | Three tiers: (1) outline helps same model, (2) outline + small ≈ flat + large, (3) outline + 7B ≥ flat + 70B. Tier 1 alone validates the approach. |
 
-The three plans form a pipeline: **Plan 1 builds the measurement instrument → Plan 3 builds the feature → Plans 1+2 measure the feature.**
+The three plans form a pipeline: **Plan 1 builds the measurement instrument → Plan 3 builds the feature → Plans 1+2 measure the feature.** Tier 1 validation (same model, outline wins) is the shipping bar — not the moonshot.
