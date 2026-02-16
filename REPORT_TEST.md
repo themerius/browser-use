@@ -152,6 +152,68 @@
 
 ## 8. What Would Close the Gaps
 
+- **Level 0 — Near-zero effort: harvest what already exists**
+
+  - **browser-use already tracks almost everything — it just doesn't aggregate it**
+    - `AgentHistoryList` (returned by `agent.run()`): total duration, per-step timing (`StepMetadata.duration_seconds`), action names/params, errors, URLs visited, screenshots, interacted elements
+    - `UsageSummary` (in `history.usage`): prompt tokens, completion tokens, cached tokens, total cost, per-model breakdown — complete token economics already instrumented
+    - `AgentTelemetryEvent`: a fully defined telemetry struct with steps, tokens, duration, success, judge verdict, action history, URLs — currently sent to PostHog analytics but never used for local benchmarking
+    - Helper methods already exist: `history.number_of_steps()`, `history.total_duration_seconds()`, `history.action_names()`, `history.errors()`, `history.is_successful()`, `history.model_thoughts()`
+    - **The gap is not instrumentation — it's a reporting layer that reads these fields and writes a benchmark report**
+
+  - **What a "Level 0" benchmark suite would look like**
+    - A thin script (distinct from CI tests) that:
+      1. Runs a set of tasks against local `pytest-httpserver` fixtures (reproducible, no live URLs)
+      2. Collects `AgentHistoryList` from each run
+      3. Extracts: steps taken, total tokens, total cost, duration, success, errors, action sequence
+      4. Runs each task N times (3–5) to capture stochastic variance
+      5. Outputs a JSON/Markdown benchmark report with per-task and aggregate metrics
+    - Estimated effort: **1–2 days** — no new instrumentation, just aggregation over existing fields
+
+  - **What you'd get immediately — without writing a single new metric**
+    - **Step efficiency**: `history.number_of_steps()` — are we solving tasks in fewer steps over time?
+    - **Token cost**: `history.usage.total_tokens` / `history.usage.total_cost` — is a code change making prompts more or less expensive?
+    - **Duration**: `history.total_duration_seconds()` — is the agent getting faster or slower?
+    - **Error rate**: `len([e for e in history.errors() if e])` / `history.number_of_steps()` — what fraction of steps produce errors?
+    - **Action distribution**: `Counter(history.action_names())` — is the agent clicking more, scrolling more, extracting more?
+    - **Regression detection**: compare current run's metrics against a stored baseline; flag if step count or token cost increases beyond a threshold
+
+  - **Reuse vs. build-from-scratch assessment for external frameworks**
+
+    | Framework | Effort | What you get | Verdict |
+    |---|---|---|---|
+    | **WebArena Verified** | **3–5 days** | 812 verified tasks, deterministic evaluators, `pip install webarena-verified`, Docker containers for self-hosted sites. browser-use navigates the sites as-is — no adapter needed, no browser ownership conflict. Offline re-evaluation from traces. | **Best first external integration.** Low effort, high rigor, decoupled evaluator. |
+    | **Web-Shepherd (PRM)** | 1–2 weeks | Step-level reward signals via 8B model on HuggingFace. Requires trajectory format adapter from `AgentHistoryList` → Web-Shepherd input. Not on PyPI (clone from GitHub). | **Best second integration.** Fills the partial-credit gap. Trajectory adapter is the main work — browser-use's history format maps reasonably well. |
+    | **BrowserGym + AgentLab** | 2–4 weeks | 6 benchmarks, parallel runner, cross-agent comparison, AgentXray trace visualization. **But**: BrowserGym owns the browser (Playwright), browser-use owns the browser (CDP) — fundamental architecture conflict requiring a thin adapter or black-box wrapper. | **Highest payoff, highest friction.** Worth it if you want leaderboard-comparable numbers across multiple benchmarks. Not worth it as a first step. |
+    | **WABER (Microsoft)** | N/A | Reliability + efficiency metrics via transparent network proxy. Black-box (completely agent-agnostic). | **Not available** — no public code released. Architecturally ideal for browser-use (proxy-based, no browser conflict). Watch for release. |
+
+  - **The argument for a distinct benchmark suite (not part of CI)**
+    - CI tests answer: "does it still work?" (binary, deterministic, fast, mocked LLM)
+    - Benchmark suite answers: "how well does it work?" (continuous, stochastic, slow, real or varied LLMs)
+    - Mixing them creates flaky CI (stochastic LLM responses) or meaningless benchmarks (mocked LLM responses)
+    - Literature standard (Anthropic's eval framework): CI for regression sentinels, benchmarks run periodically with multi-trial aggregation
+    - **Proposed structure**: `benchmarks/` directory alongside `tests/`, with its own runner, task definitions, and report generator — separate from `pytest` invocation
+
+  - **Minimal viable benchmark report format**
+    ```
+    ## browser-use Benchmark Report — 2026-02-16
+
+    Tasks: 20 | Trials per task: 3 | Model: gpt-4o-mini
+
+    | Task              | Pass Rate | Avg Steps | Avg Tokens | Avg Cost  | Avg Duration |
+    |-------------------|-----------|-----------|------------|-----------|--------------|
+    | search_product    | 3/3       | 4.3       | 12,841     | $0.0032   | 8.2s         |
+    | fill_form         | 2/3       | 6.7       | 18,203     | $0.0045   | 12.1s        |
+    | navigate_checkout | 1/3       | 9.0       | 31,556     | $0.0079   | 21.4s        |
+
+    Aggregate: 66.7% pass | 6.7 avg steps | 20,867 avg tokens | $0.0052 avg cost
+    Baseline:  60.0% pass | 7.2 avg steps | 22,100 avg tokens | $0.0055 avg cost
+    Delta:     +6.7pp     | -0.5 steps    | -1,233 tokens     | -$0.0003
+    ```
+    - All numbers derivable from existing `AgentHistoryList` fields — no new instrumentation
+    - Baseline comparison enables regression detection on continuous metrics
+    - Per-task breakdown reveals which task categories improve or regress
+
 - **Level 1 — Low effort, high value**
   - Add step counting to CI tests: assert agent finishes in ≤ N steps (not just that it finishes)
   - Add token tracking to `evaluate_tasks.py`: record prompt + completion tokens per task
