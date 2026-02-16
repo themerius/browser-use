@@ -279,6 +279,221 @@ def _invoice_page_html(invoices: list[dict], page: int, total_pages: int) -> str
 </body></html>"""
 
 
+def wcag_compliant_form() -> dict[str, str]:
+	"""WCAG-compliant job application form with proper semantic HTML.
+
+	Uses: <form>, <fieldset>, <legend>, <label for=>, <input>, <select>,
+	<textarea>, <button type=submit>, aria-required, aria-describedby,
+	landmark roles, proper heading hierarchy.
+	"""
+	return {
+		'/': """<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Job Application - ACME Corp</title>
+</head>
+<body>
+	<header role="banner">
+		<h1>ACME Corp Careers</h1>
+		<nav role="navigation" aria-label="Main navigation">
+			<a href="/">Home</a> | <a href="/apply">Apply</a>
+		</nav>
+	</header>
+	<main role="main">
+		<h2>Job Application Form</h2>
+		<p id="form-instructions">Please fill out all required fields marked with *.</p>
+		<form action="/submit" method="post" aria-describedby="form-instructions">
+			<fieldset>
+				<legend>Personal Information</legend>
+				<div>
+					<label for="fullname">Full Name *</label>
+					<input type="text" id="fullname" name="fullname" required aria-required="true" autocomplete="name" />
+				</div>
+				<div>
+					<label for="email">Email Address *</label>
+					<input type="email" id="email" name="email" required aria-required="true" autocomplete="email" />
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>Position Details</legend>
+				<div>
+					<label for="position">Position *</label>
+					<select id="position" name="position" required aria-required="true">
+						<option value="">-- Select a position --</option>
+						<option value="junior">Junior Engineer</option>
+						<option value="senior">Senior Engineer</option>
+						<option value="staff">Staff Engineer</option>
+						<option value="principal">Principal Engineer</option>
+					</select>
+				</div>
+				<div>
+					<label for="coverletter">Cover Letter *</label>
+					<textarea id="coverletter" name="coverletter" rows="5" required aria-required="true"
+						placeholder="Tell us why you're a great fit..."></textarea>
+				</div>
+			</fieldset>
+			<button type="submit">Submit Application</button>
+		</form>
+	</main>
+	<footer role="contentinfo">
+		<p>&copy; 2026 ACME Corp</p>
+	</footer>
+</body>
+</html>""",
+		'/submit': """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Application Received</title></head>
+<body>
+	<main role="main">
+		<h1>Application Received</h1>
+		<p class="confirmation">Thank you, your application for <strong>Senior Engineer</strong> has been submitted successfully. We will contact you within 5 business days.</p>
+	</main>
+</body>
+</html>""",
+	}
+
+
+def wcag_noncompliant_form() -> dict[str, str]:
+	"""Non-WCAG-compliant job application form using pure div soup.
+
+	Identical task and visual appearance, but NO semantic HTML:
+	- No <form>, <input>, <select>, <textarea>, <button>, <label>, <fieldset>
+	- Everything is <div> and <span> with CSS classes and contenteditable
+	- Custom JS dropdown instead of <select>
+	- Click-handler div instead of <button>
+	- No ARIA attributes, no landmarks, no heading hierarchy
+	"""
+	return {
+		'/': """<!DOCTYPE html>
+<html>
+<head>
+	<title>Job Application - ACME Corp</title>
+	<style>
+		.page-title { font-size: 28px; font-weight: bold; margin: 20px 0; }
+		.section-title { font-size: 20px; font-weight: bold; margin: 15px 0 10px; color: #333; }
+		.nav-bar { margin-bottom: 20px; }
+		.nav-bar .nav-item { color: blue; text-decoration: underline; cursor: pointer; margin-right: 10px; }
+		.field-row { margin: 12px 0; }
+		.field-label { font-size: 14px; color: #555; margin-bottom: 4px; }
+		.text-field {
+			border: 1px solid #ccc; padding: 8px; min-height: 20px;
+			background: white; cursor: text; font-family: inherit; font-size: 14px;
+		}
+		.text-field:focus { outline: 2px solid #007bff; }
+		.text-area-field {
+			border: 1px solid #ccc; padding: 8px; min-height: 100px;
+			background: white; cursor: text; font-family: inherit; font-size: 14px;
+		}
+		.custom-dropdown { position: relative; display: inline-block; width: 100%; }
+		.dropdown-display {
+			border: 1px solid #ccc; padding: 8px; background: white; cursor: pointer;
+			font-size: 14px;
+		}
+		.dropdown-display::after { content: " ▼"; float: right; }
+		.dropdown-options {
+			display: none; position: absolute; top: 100%; left: 0; right: 0;
+			border: 1px solid #ccc; background: white; z-index: 10; max-height: 200px;
+			overflow-y: auto;
+		}
+		.dropdown-options.open { display: block; }
+		.dropdown-option { padding: 8px; cursor: pointer; font-size: 14px; }
+		.dropdown-option:hover { background: #e8e8e8; }
+		.submit-btn {
+			display: inline-block; padding: 10px 24px; background: #007bff; color: white;
+			cursor: pointer; margin-top: 15px; font-size: 16px; border-radius: 4px;
+		}
+		.submit-btn:hover { background: #0056b3; }
+		.group-box { border: 1px solid #ddd; padding: 15px; margin: 10px 0; }
+		.group-title { font-weight: bold; margin-bottom: 10px; color: #333; }
+		.footer-text { margin-top: 30px; color: #999; font-size: 12px; }
+	</style>
+</head>
+<body>
+	<div class="page-title">ACME Corp Careers</div>
+	<div class="nav-bar">
+		<span class="nav-item">Home</span>
+		<span class="nav-item">Apply</span>
+	</div>
+	<div class="section-title">Job Application Form</div>
+	<div class="field-hint">Please fill out all required fields marked with *.</div>
+
+	<div class="group-box">
+		<div class="group-title">Personal Information</div>
+		<div class="field-row">
+			<div class="field-label">Full Name *</div>
+			<div class="text-field" contenteditable="true" data-field="fullname"></div>
+		</div>
+		<div class="field-row">
+			<div class="field-label">Email Address *</div>
+			<div class="text-field" contenteditable="true" data-field="email"></div>
+		</div>
+	</div>
+
+	<div class="group-box">
+		<div class="group-title">Position Details</div>
+		<div class="field-row">
+			<div class="field-label">Position *</div>
+			<div class="custom-dropdown" id="position-dropdown">
+				<div class="dropdown-display" id="position-display">-- Select a position --</div>
+				<div class="dropdown-options" id="position-options">
+					<div class="dropdown-option" data-value="junior">Junior Engineer</div>
+					<div class="dropdown-option" data-value="senior">Senior Engineer</div>
+					<div class="dropdown-option" data-value="staff">Staff Engineer</div>
+					<div class="dropdown-option" data-value="principal">Principal Engineer</div>
+				</div>
+			</div>
+		</div>
+		<div class="field-row">
+			<div class="field-label">Cover Letter *</div>
+			<div class="text-area-field" contenteditable="true" data-field="coverletter"></div>
+		</div>
+	</div>
+
+	<div class="submit-btn" id="submit-btn">Submit Application</div>
+
+	<div class="footer-text">&copy; 2026 ACME Corp</div>
+
+	<script>
+		// Custom dropdown toggle
+		document.getElementById('position-display').addEventListener('click', function() {
+			document.getElementById('position-options').classList.toggle('open');
+		});
+
+		// Dropdown option selection
+		document.querySelectorAll('.dropdown-option').forEach(function(opt) {
+			opt.addEventListener('click', function() {
+				document.getElementById('position-display').textContent = this.textContent;
+				document.getElementById('position-display').dataset.value = this.dataset.value;
+				document.getElementById('position-options').classList.remove('open');
+			});
+		});
+
+		// Close dropdown on outside click
+		document.addEventListener('click', function(e) {
+			if (!document.getElementById('position-dropdown').contains(e.target)) {
+				document.getElementById('position-options').classList.remove('open');
+			}
+		});
+
+		// Submit handler
+		document.getElementById('submit-btn').addEventListener('click', function() {
+			window.location.href = '/submit';
+		});
+	</script>
+</body>
+</html>""",
+		'/submit': """<!DOCTYPE html>
+<html>
+<head><title>Application Received</title></head>
+<body>
+	<div style="font-size: 24px; font-weight: bold; margin: 20px 0;">Application Received</div>
+	<div class="confirmation">Thank you, your application for <span style="font-weight:bold">Senior Engineer</span> has been submitted successfully. We will contact you within 5 business days.</div>
+</body>
+</html>""",
+	}
+
+
 def download_all_invoices() -> dict[str, str | bytes | dict]:
 	"""Paginated invoice portal with 8 invoices across 3 pages, each downloadable as PDF."""
 	all_invoices = [

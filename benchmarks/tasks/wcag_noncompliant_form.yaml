@@ -1,0 +1,70 @@
+name: WCAG Non-Compliant Form
+task: |
+  Fill out the job application form with the following information:
+  Full Name: Jane Smith
+  Email: jane.smith@example.com
+  Position: Senior Engineer (select from the dropdown)
+  Cover Letter: I am excited to apply for this role. I bring 8 years of engineering experience and a passion for building scalable systems.
+  Submit the application and confirm it was received.
+fixture: wcag_noncompliant_form
+max_steps: 15
+expected_result:
+  contains:
+    - "Application Received"
+mock_actions:
+  - |
+    {
+      "thinking": "I need to fill the Full Name field. The page uses contenteditable divs instead of inputs.",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "On the non-compliant job application form with div-based fields",
+      "next_goal": "Click on the name field and type",
+      "action": [{"click": {"index": 1}}, {"input_text": {"index": 1, "text": "Jane Smith"}}]
+    }
+  - |
+    {
+      "thinking": "Name filled, now fill email field",
+      "evaluation_previous_goal": "Typed name",
+      "memory": "Name field filled",
+      "next_goal": "Type email in the email field",
+      "action": [{"click": {"index": 2}}, {"input_text": {"index": 2, "text": "jane.smith@example.com"}}]
+    }
+  - |
+    {
+      "thinking": "Email filled, now I need to open the custom dropdown for position",
+      "evaluation_previous_goal": "Typed email",
+      "memory": "Name and email filled",
+      "next_goal": "Click the dropdown display to open options",
+      "action": [{"click": {"index": 3}}]
+    }
+  - |
+    {
+      "thinking": "Dropdown is open, select Senior Engineer",
+      "evaluation_previous_goal": "Dropdown opened",
+      "memory": "Dropdown options visible",
+      "next_goal": "Click Senior Engineer option",
+      "action": [{"click": {"index": 4}}]
+    }
+  - |
+    {
+      "thinking": "Position selected, now fill cover letter textarea",
+      "evaluation_previous_goal": "Selected Senior Engineer",
+      "memory": "Name, email, position filled",
+      "next_goal": "Type cover letter",
+      "action": [{"click": {"index": 5}}, {"input_text": {"index": 5, "text": "I am excited to apply for this role. I bring 8 years of engineering experience and a passion for building scalable systems."}}]
+    }
+  - |
+    {
+      "thinking": "All fields filled, click the submit div",
+      "evaluation_previous_goal": "Typed cover letter",
+      "memory": "All fields completed",
+      "next_goal": "Click submit button div",
+      "action": [{"click": {"index": 6}}]
+    }
+  - |
+    {
+      "thinking": "Form submitted, confirmation page shows Application Received",
+      "evaluation_previous_goal": "Submit clicked, navigated to confirmation",
+      "memory": "Confirmation page displayed",
+      "next_goal": "Report success",
+      "action": [{"done": {"text": "Application Received. Thank you, your application for Senior Engineer has been submitted successfully.", "success": true}}]
+    }
