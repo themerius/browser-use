@@ -1,0 +1,29 @@
+name: Search Product
+task: |
+  Go to the product store, search for any product using the search form,
+  and report the names and prices of all products found in the search results.
+fixture: search_product
+max_steps: 10
+expected_result:
+  contains:
+    - "Wireless Headphones"
+    - "$79.99"
+    - "Mechanical Keyboard"
+  max_steps: 5
+mock_actions:
+  - |
+    {
+      "thinking": "I need to find the search form and submit a search",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "On the product store home page with a search form",
+      "next_goal": "Click the search button to search for products",
+      "action": [{"click": {"index": 2}}]
+    }
+  - |
+    {
+      "thinking": "I can see the search results with 3 products",
+      "evaluation_previous_goal": "Search results loaded",
+      "memory": "Found: Wireless Headphones $79.99, USB-C Hub $34.99, Mechanical Keyboard $129.99",
+      "next_goal": "Report the product names and prices",
+      "action": [{"done": {"text": "Search results: Wireless Headphones ($79.99), USB-C Hub ($34.99), Mechanical Keyboard ($129.99)", "success": true}}]
+    }

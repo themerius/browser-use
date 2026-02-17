@@ -1,0 +1,38 @@
+name: Download Newest Invoice
+task: |
+  Navigate to the invoice portal, find the most recent invoice,
+  download it as PDF, and report the invoice number, date, and amount.
+fixture: download_newest_invoice
+max_steps: 10
+expected_result:
+  contains:
+    - "INV-2026-005"
+    - "2026-02-15"
+    - "$1,249.00"
+  max_steps: 7
+  files_downloaded: 1
+mock_actions:
+  - |
+    {
+      "thinking": "I need to navigate to the invoices page from the portal",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "On the company portal page with Invoices link",
+      "next_goal": "Click the Invoices link",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "I can see the invoice table. The newest invoice is INV-2026-005 dated 2026-02-15",
+      "evaluation_previous_goal": "Navigated to invoices page",
+      "memory": "Invoice list visible, newest is INV-2026-005",
+      "next_goal": "Click the Download PDF link for the newest invoice",
+      "action": [{"click": {"index": 1}}]
+    }
+  - |
+    {
+      "thinking": "PDF download initiated for INV-2026-005",
+      "evaluation_previous_goal": "Clicked download link",
+      "memory": "Downloaded INV-2026-005 PDF. Invoice: INV-2026-005, Date: 2026-02-15, Amount: $1,249.00",
+      "next_goal": "Report the invoice details",
+      "action": [{"done": {"text": "Downloaded newest invoice: INV-2026-005, Date: 2026-02-15, Amount: $1,249.00, Status: Due. PDF file downloaded successfully.", "success": true}}]
+    }

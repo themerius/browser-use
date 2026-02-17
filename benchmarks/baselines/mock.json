@@ -1,0 +1,131 @@
+{
+  "model": "mock",
+  "trials_per_task": 1,
+  "tasks": {
+    "Download All Invoices": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 19.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 1.866755723953247,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 10,
+        "go_back": 7,
+        "done": 1
+      },
+      "files_downloaded_expected": 8,
+      "avg_files_downloaded": 0.0
+    },
+    "Download Newest Invoice": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 0.2956223487854004,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "done": 1
+      },
+      "files_downloaded_expected": 1,
+      "avg_files_downloaded": 0.0
+    },
+    "Dropdown Interaction": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 0.2895658016204834,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "select_dropdown": 1,
+        "click": 1,
+        "done": 1
+      }
+    },
+    "Extract Structured Data": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 2.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 0.12271666526794434,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "done": 1
+      }
+    },
+    "Fill Contact Form": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 6.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 1.259171724319458,
+      "avg_error_rate": 0.5,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 1,
+        "done": 1
+      }
+    },
+    "Navigate Multi Page": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 0.3008606433868408,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "done": 1
+      }
+    },
+    "Search Product": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_steps": 3.0,
+      "std_steps": 0.0,
+      "avg_tokens": 0.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 0.19906330108642578,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 1,
+        "done": 1
+      }
+    }
+  },
+  "aggregate": {
+    "pass_rate": 1.0,
+    "avg_steps": 6.0,
+    "avg_tokens": 0.0,
+    "avg_cost": 0.0,
+    "avg_duration": 0.6191080297742572
+  },
+  "timestamp": "2026-02-16T17:36:08.636825+00:00"
+}

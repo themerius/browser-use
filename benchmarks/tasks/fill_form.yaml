@@ -1,0 +1,52 @@
+name: Fill Contact Form
+task: |
+  Fill out the contact form with the following information:
+  Name: John Doe, Email: john@example.com, Message: Hello, this is a test message.
+  Submit the form and confirm submission was successful.
+fixture: fill_form
+max_steps: 10
+expected_result:
+  contains:
+    - "Thank You"
+  max_steps: 6
+mock_actions:
+  - |
+    {
+      "thinking": "I need to fill in the name field",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "On the contact form page with name, email, and message fields",
+      "next_goal": "Type name in the name field",
+      "action": [{"input_text": {"index": 1, "text": "John Doe"}}]
+    }
+  - |
+    {
+      "thinking": "Name filled, now fill email",
+      "evaluation_previous_goal": "Typed name successfully",
+      "memory": "Name field filled with John Doe",
+      "next_goal": "Type email in the email field",
+      "action": [{"input_text": {"index": 2, "text": "john@example.com"}}]
+    }
+  - |
+    {
+      "thinking": "Email filled, now fill message",
+      "evaluation_previous_goal": "Typed email successfully",
+      "memory": "Name and email filled",
+      "next_goal": "Type message in the textarea",
+      "action": [{"input_text": {"index": 3, "text": "Hello, this is a test message."}}]
+    }
+  - |
+    {
+      "thinking": "All fields filled, submit the form",
+      "evaluation_previous_goal": "Typed message successfully",
+      "memory": "All form fields filled",
+      "next_goal": "Click the submit button",
+      "action": [{"click": {"index": 4}}]
+    }
+  - |
+    {
+      "thinking": "Form submitted, I can see the Thank You confirmation",
+      "evaluation_previous_goal": "Form submitted successfully",
+      "memory": "Confirmation page shows Thank You message",
+      "next_goal": "Report success",
+      "action": [{"done": {"text": "Form submitted successfully. Confirmation: Thank You! Your message has been received.", "success": true}}]
+    }

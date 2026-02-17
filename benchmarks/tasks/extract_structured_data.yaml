@@ -1,0 +1,22 @@
+name: Extract Structured Data
+task: |
+  Extract all product data from the inventory table on the page.
+  Report each product with its name, price, and stock count.
+fixture: extract_structured_data
+max_steps: 10
+expected_result:
+  contains:
+    - "Widget A"
+    - "$12.50"
+    - "Doohickey Z"
+    - "500"
+  max_steps: 3
+mock_actions:
+  - |
+    {
+      "thinking": "I can see the inventory table with 5 products. Let me extract all data.",
+      "evaluation_previous_goal": "Starting task",
+      "memory": "Inventory table visible with Product, Price, Stock columns",
+      "next_goal": "Extract and report all product data",
+      "action": [{"done": {"text": "Product Inventory:\n1. Widget A - $12.50 - 142 in stock\n2. Widget B - $8.75 - 89 in stock\n3. Gadget X - $45.00 - 23 in stock\n4. Gadget Y - $67.25 - 7 in stock\n5. Doohickey Z - $3.99 - 500 in stock", "success": true}}]
+    }
