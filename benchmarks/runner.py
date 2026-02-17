@@ -95,6 +95,7 @@ async def _run_single_trial(
 	model: str,
 	server: HTTPServer,
 	trial_num: int,
+	outline_mode: bool = False,
 ) -> tuple[TaskRunMetrics, int]:
 	"""Run a single trial of a benchmark task.
 
@@ -139,6 +140,7 @@ async def _run_single_trial(
 			task=task_str,
 			llm=llm,
 			browser_session=session,
+			outline_mode=outline_mode,
 		)
 
 		history = await agent.run(max_steps=max_steps)
@@ -184,6 +186,7 @@ async def run_benchmark(
 	output_dir: str | Path = 'benchmarks/reports',
 	save_baseline_flag: bool = False,
 	compare_baseline_flag: bool = True,
+	outline_mode: bool = False,
 ) -> dict:
 	"""Run the full benchmark suite.
 
@@ -233,7 +236,7 @@ async def run_benchmark(
 			trial_metrics: list[TaskRunMetrics] = []
 			trial_download_counts: list[int] = []
 			for trial_num in range(1, trials + 1):
-				metrics, download_count = await _run_single_trial(task, fixture_dict, model, server, trial_num)
+				metrics, download_count = await _run_single_trial(task, fixture_dict, model, server, trial_num, outline_mode=outline_mode)
 				trial_metrics.append(metrics)
 				trial_download_counts.append(download_count)
 
@@ -289,6 +292,7 @@ async def run_benchmark(
 
 	results = {
 		'model': model,
+		'outline_mode': outline_mode,
 		'trials_per_task': trials,
 		'tasks': all_task_results,
 		'aggregate': suite_aggregate,

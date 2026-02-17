@@ -2,6 +2,7 @@
 
 Usage:
     python -m benchmarks [--model mock] [--trials 3] [--tasks benchmarks/tasks/*.yaml] [--output benchmarks/reports/]
+    python -m benchmarks --outline-mode  # Run with hierarchical outline serialization
 """
 
 import argparse
@@ -61,6 +62,12 @@ def main() -> None:
 		dest='compare_baseline',
 		help='Skip baseline comparison',
 	)
+	parser.add_argument(
+		'--outline-mode',
+		action='store_true',
+		default=False,
+		help='Use hierarchical landmark-grouped outline serialization instead of flat element list',
+	)
 
 	args = parser.parse_args()
 
@@ -74,6 +81,7 @@ def main() -> None:
 			output_dir=args.output,
 			save_baseline_flag=args.save_baseline,
 			compare_baseline_flag=args.compare_baseline,
+			outline_mode=args.outline_mode,
 		)
 	)
 
@@ -81,6 +89,7 @@ def main() -> None:
 	agg = results.get('aggregate', {})
 	print('\n=== Benchmark Summary ===')
 	print(f'Model: {results["model"]}')
+	print(f'Outline mode: {results.get("outline_mode", False)}')
 	print(f'Tasks: {len(results["tasks"])}')
 	print(f'Trials per task: {results["trials_per_task"]}')
 	if agg:

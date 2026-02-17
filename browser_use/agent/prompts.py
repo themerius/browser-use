@@ -124,6 +124,8 @@ class AgentMessagePrompt:
 		llm_screenshot_size: tuple[int, int] | None = None,
 		unavailable_skills_info: str | None = None,
 		plan_description: str | None = None,
+		outline_mode: bool = False,
+		previous_landmarks: list | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -144,6 +146,8 @@ class AgentMessagePrompt:
 		self.unavailable_skills_info: str | None = unavailable_skills_info
 		self.plan_description: str | None = plan_description
 		self.llm_screenshot_size = llm_screenshot_size
+		self.outline_mode = outline_mode
+		self.previous_landmarks = previous_landmarks
 		assert self.browser_state
 
 	def _extract_page_statistics(self) -> dict[str, int]:
@@ -233,7 +237,11 @@ class AgentMessagePrompt:
 		stats_text += f', {page_stats["total_elements"]} total elements'
 		stats_text += '</page_stats>\n'
 
-		elements_text = self.browser_state.dom_state.llm_representation(include_attributes=self.include_attributes)
+		elements_text = self.browser_state.dom_state.llm_representation(
+			include_attributes=self.include_attributes,
+			outline_mode=self.outline_mode,
+			previous_landmarks=self.previous_landmarks,
+		)
 
 		if len(elements_text) > self.max_clickable_elements_length:
 			elements_text = elements_text[: self.max_clickable_elements_length]

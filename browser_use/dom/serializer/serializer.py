@@ -1,6 +1,11 @@
 # @file purpose: Serializes enhanced DOM trees to string format for LLM consumption
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+	from browser_use.dom.serializer.outline import LandmarkRegion
 
 from browser_use.dom.serializer.clickable_elements import ClickableElementDetector
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
@@ -1083,6 +1088,184 @@ class DOMTreeSerializer:
 					formatted_text.append(f'{depth_str}... (more content below viewport - scroll to reveal)')
 
 		return '\n'.join(formatted_text)
+
+	@staticmethod
+	def serialize_outline_tree(
+		node: SimplifiedNode | None,
+		include_attributes: list[str],
+		previous_landmarks: 'list[LandmarkRegion] | None' = None,
+	) -> str:
+		"""Serialize the DOM tree in hierarchical outline mode.
+
+		Groups interactive elements under landmark regions (BANNER, NAV, MAIN,
+		etc.) and annotates with heading hierarchy.  Unchanged regions between
+		steps are collapsed to save tokens.
+		"""
+		from browser_use.dom.serializer.outline import (
+			_region_key,
+			detect_landmarks,
+			detect_unchanged_regions,
+		)
+
+		if not node:
+			return ''
+
+		landmarks = detect_landmarks(node)
+		unchanged = detect_unchanged_regions(landmarks, previous_landmarks)
+
+		# Collect nodes that belong to a landmark (by id) so we can detect orphans
+		landmark_node_ids: set[int] = set()
+		for lm in landmarks:
+			DOMTreeSerializer._collect_node_ids(lm.node, landmark_node_ids)
+
+		lines: list[str] = ['=== PAGE OUTLINE ===']
+
+		for lm in landmarks:
+			key = _region_key(lm)
+			header = lm.role.upper()
+			if lm.name:
+				header += f': "{lm.name}"'
+
+			if unchanged.get(key, False):
+				# Collapsed view
+				lines.append(f'{header} (unchanged, {lm.element_count} elements)')
+			else:
+				lines.append(f'{header}:')
+				# Serialize the landmark's children
+				DOMTreeSerializer._serialize_outline_subtree(
+					lm.node, include_attributes, lines, depth=1, skip_root=True,
+				)
+
+			# Nested sub-regions
+			for sub in lm.sub_regions:
+				sub_key = _region_key(sub)
+				sub_header = f'  {sub.role.upper()}'
+				if sub.name:
+					sub_header += f': "{sub.name}"'
+				if unchanged.get(sub_key, False):
+					lines.append(f'{sub_header} (unchanged, {sub.element_count} elements)')
+				else:
+					lines.append(f'{sub_header}:')
+					DOMTreeSerializer._serialize_outline_subtree(
+						sub.node, include_attributes, lines, depth=2, skip_root=True,
+					)
+
+		# Orphan elements — not inside any landmark
+		orphan_lines: list[str] = []
+		DOMTreeSerializer._collect_orphan_elements(
+			node, include_attributes, orphan_lines, landmark_node_ids, depth=1,
+		)
+		if orphan_lines:
+			lines.append('(ungrouped):')
+			lines.extend(orphan_lines)
+
+		lines.append('=== END OUTLINE ===')
+		return '\n'.join(lines)
+
+	@staticmethod
+	def _collect_node_ids(node: SimplifiedNode, ids: set[int]) -> None:
+		"""Recursively collect all node IDs in a subtree."""
+		ids.add(id(node))
+		for child in node.children:
+			DOMTreeSerializer._collect_node_ids(child, ids)
+
+	@staticmethod
+	def _serialize_outline_subtree(
+		node: SimplifiedNode,
+		include_attributes: list[str],
+		lines: list[str],
+		depth: int = 0,
+		skip_root: bool = False,
+	) -> None:
+		"""Serialize a subtree for outline mode, emitting headings and interactive elements."""
+		from browser_use.dom.serializer.outline import _get_heading_level, _get_heading_text
+
+		indent = '\t' * depth
+
+		if not skip_root:
+			# Check if this is a heading
+			heading_level = _get_heading_level(node)
+			if heading_level is not None:
+				heading_text = _get_heading_text(node)
+				md_prefix = '#' * heading_level
+				lines.append(f'{indent}{md_prefix} {heading_text}')
+			elif node.is_interactive:
+				# Interactive element — use same format as flat serializer
+				new_prefix = '*' if node.is_new else ''
+				tag = node.original_node.tag_name
+				attrs_str = DOMTreeSerializer._build_attributes_string(
+					node.original_node, include_attributes, '',
+				)
+				line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
+				if attrs_str:
+					line += f' {attrs_str}'
+				line += ' />'
+				lines.append(line)
+			elif node.original_node.node_type == NodeType.TEXT_NODE:
+				is_visible = node.original_node.snapshot_node and node.original_node.is_visible
+				if (
+					is_visible
+					and node.original_node.node_value
+					and node.original_node.node_value.strip()
+					and len(node.original_node.node_value.strip()) > 1
+				):
+					lines.append(f'{indent}{node.original_node.node_value.strip()}')
+
+		# Recurse into children
+		child_depth = depth if skip_root else depth + 1
+		for child in node.children:
+			DOMTreeSerializer._serialize_outline_subtree(
+				child, include_attributes, lines, child_depth,
+			)
+
+	@staticmethod
+	def _collect_orphan_elements(
+		node: SimplifiedNode,
+		include_attributes: list[str],
+		lines: list[str],
+		landmark_node_ids: set[int],
+		depth: int = 0,
+	) -> None:
+		"""Collect interactive/heading elements not inside any landmark."""
+		from browser_use.dom.serializer.outline import _get_heading_level, _get_heading_text
+
+		# If this node IS a landmark (is in the landmark set), skip it entirely
+		if id(node) in landmark_node_ids:
+			return
+
+		indent = '\t' * depth
+
+		heading_level = _get_heading_level(node)
+		if heading_level is not None:
+			heading_text = _get_heading_text(node)
+			md_prefix = '#' * heading_level
+			lines.append(f'{indent}{md_prefix} {heading_text}')
+		elif node.is_interactive:
+			new_prefix = '*' if node.is_new else ''
+			tag = node.original_node.tag_name
+			attrs_str = DOMTreeSerializer._build_attributes_string(
+				node.original_node, include_attributes, '',
+			)
+			line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
+			if attrs_str:
+				line += f' {attrs_str}'
+			line += ' />'
+			lines.append(line)
+		elif node.original_node.node_type == NodeType.TEXT_NODE:
+			is_visible = node.original_node.snapshot_node and node.original_node.is_visible
+			if (
+				is_visible
+				and node.original_node.node_value
+				and node.original_node.node_value.strip()
+				and len(node.original_node.node_value.strip()) > 1
+			):
+				lines.append(f'{indent}{node.original_node.node_value.strip()}')
+
+		# Recurse
+		for child in node.children:
+			DOMTreeSerializer._collect_orphan_elements(
+				child, include_attributes, lines, landmark_node_ids, depth,
+			)
 
 	@staticmethod
 	def _build_attributes_string(node: EnhancedDOMTreeNode, include_attributes: list[str], text: str) -> str:

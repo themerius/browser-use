@@ -204,6 +204,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		loop_detection_enabled: bool = True,
 		llm_screenshot_size: tuple[int, int] | None = None,
 		message_compaction: MessageCompactionSettings | bool | None = True,
+		outline_mode: bool = False,
 		_url_shortening_limit: int = 25,
 		**kwargs,
 	):
@@ -409,6 +410,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			loop_detection_window=loop_detection_window,
 			loop_detection_enabled=loop_detection_enabled,
 			message_compaction=message_compaction,
+			outline_mode=outline_mode,
 		)
 
 		# Token cost service
@@ -514,6 +516,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			include_recent_events=self.include_recent_events,
 			sample_images=self.sample_images,
 			llm_screenshot_size=llm_screenshot_size,
+			outline_mode=self.settings.outline_mode,
 		)
 
 		if self.sensitive_data:
@@ -1104,6 +1107,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			plan_description=plan_description,
 			skip_state_update=True,
 		)
+
+		# After serialization, update landmark state for outline mode cross-step collapsing
+		if self.settings.outline_mode and browser_state_summary.dom_state and browser_state_summary.dom_state._root:
+			from browser_use.dom.serializer.outline import detect_landmarks
+
+			self._message_manager.previous_landmarks = detect_landmarks(browser_state_summary.dom_state._root)
 
 		await self._inject_budget_warning(step_info)
 		self._inject_replan_nudge()
