@@ -316,12 +316,20 @@ class AgentMessagePrompt:
 				closed_popups_text += f'  - {popup_msg}\n'
 			closed_popups_text += '\n'
 
+		outline_hint = ''
+		if self.outline_mode:
+			outline_hint = (
+				'(Outline mode: elements grouped by page landmark — BANNER, NAVIGATION, MAIN, CONTENTINFO etc. '
+				'Headings shown as # H1, ## H2. Elements use same [index]<tag attrs /> format. '
+				'"quoted text" after an element = its accessible label. (ungrouped) = elements outside any landmark.)\n'
+			)
+
 		browser_state = f"""{stats_text}{current_tab_text}
 Available tabs:
 {tabs_text}
 {page_info_text}
 {recent_events_text}{closed_popups_text}{pdf_message}Interactive elements{truncated_text}:
-{elements_text}
+{outline_hint}{elements_text}
 """
 		return browser_state
 

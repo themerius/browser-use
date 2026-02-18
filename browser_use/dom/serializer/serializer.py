@@ -956,39 +956,12 @@ class DOMTreeSerializer:
 				)
 
 				# Add compound component information to attributes if present
-				if node.original_node._compound_children:
-					compound_info = []
-					for child_info in node.original_node._compound_children:
-						parts = []
-						if child_info['name']:
-							parts.append(f'name={child_info["name"]}')
-						if child_info['role']:
-							parts.append(f'role={child_info["role"]}')
-						if child_info['valuemin'] is not None:
-							parts.append(f'min={child_info["valuemin"]}')
-						if child_info['valuemax'] is not None:
-							parts.append(f'max={child_info["valuemax"]}')
-						if child_info['valuenow'] is not None:
-							parts.append(f'current={child_info["valuenow"]}')
-
-						# Add select-specific information
-						if 'options_count' in child_info and child_info['options_count'] is not None:
-							parts.append(f'count={child_info["options_count"]}')
-						if 'first_options' in child_info and child_info['first_options']:
-							options_str = '|'.join(child_info['first_options'][:4])  # Limit to 4 options
-							parts.append(f'options={options_str}')
-						if 'format_hint' in child_info and child_info['format_hint']:
-							parts.append(f'format={child_info["format_hint"]}')
-
-						if parts:
-							compound_info.append(f'({",".join(parts)})')
-
-					if compound_info:
-						compound_attr = f'compound_components={",".join(compound_info)}'
-						if attributes_html_str:
-							attributes_html_str += f' {compound_attr}'
-						else:
-							attributes_html_str = compound_attr
+				compound_attr = DOMTreeSerializer._build_compound_string(node.original_node)
+				if compound_attr:
+					if attributes_html_str:
+						attributes_html_str += f' {compound_attr}'
+					else:
+						attributes_html_str = compound_attr
 
 				# Build the line with shadow host indicator
 				shadow_prefix = ''
@@ -1088,6 +1061,47 @@ class DOMTreeSerializer:
 					formatted_text.append(f'{depth_str}... (more content below viewport - scroll to reveal)')
 
 		return '\n'.join(formatted_text)
+
+	@staticmethod
+	def _build_compound_string(node: EnhancedDOMTreeNode) -> str:
+		"""Build a compound_components attribute string for an interactive element.
+
+		Extracts select options, slider ranges, date format hints, etc. from
+		the node's ``_compound_children``.  Returns an empty string when no
+		compound info is available.
+		"""
+		if not node._compound_children:
+			return ''
+
+		compound_info: list[str] = []
+		for child_info in node._compound_children:
+			parts: list[str] = []
+			if child_info['name']:
+				parts.append(f'name={child_info["name"]}')
+			if child_info['role']:
+				parts.append(f'role={child_info["role"]}')
+			if child_info['valuemin'] is not None:
+				parts.append(f'min={child_info["valuemin"]}')
+			if child_info['valuemax'] is not None:
+				parts.append(f'max={child_info["valuemax"]}')
+			if child_info['valuenow'] is not None:
+				parts.append(f'current={child_info["valuenow"]}')
+
+			# Select-specific information
+			if 'options_count' in child_info and child_info['options_count'] is not None:
+				parts.append(f'count={child_info["options_count"]}')
+			if 'first_options' in child_info and child_info['first_options']:
+				options_str = '|'.join(child_info['first_options'][:4])  # Limit to 4 options
+				parts.append(f'options={options_str}')
+			if 'format_hint' in child_info and child_info['format_hint']:
+				parts.append(f'format={child_info["format_hint"]}')
+
+			if parts:
+				compound_info.append(f'({",".join(parts)})')
+
+		if compound_info:
+			return f'compound_components={",".join(compound_info)}'
+		return ''
 
 	@staticmethod
 	def serialize_outline_tree(
@@ -1222,6 +1236,10 @@ class DOMTreeSerializer:
 				attrs_str = DOMTreeSerializer._build_attributes_string(
 					node.original_node, include_attributes, ax_name or '',
 				)
+				# Add compound component info (select options, slider ranges, etc.)
+				compound_attr = DOMTreeSerializer._build_compound_string(node.original_node)
+				if compound_attr:
+					attrs_str = f'{attrs_str} {compound_attr}' if attrs_str else compound_attr
 				line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
 				if attrs_str:
 					line += f' {attrs_str}'
@@ -1276,6 +1294,10 @@ class DOMTreeSerializer:
 			attrs_str = DOMTreeSerializer._build_attributes_string(
 				node.original_node, include_attributes, ax_name or '',
 			)
+			# Add compound component info (select options, slider ranges, etc.)
+			compound_attr = DOMTreeSerializer._build_compound_string(node.original_node)
+			if compound_attr:
+				attrs_str = f'{attrs_str} {compound_attr}' if attrs_str else compound_attr
 			line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
 			if attrs_str:
 				line += f' {attrs_str}'
@@ -1293,10 +1315,10 @@ class DOMTreeSerializer:
 			):
 				lines.append(f'{indent}{node.original_node.node_value.strip()}')
 
-		# Recurse
+		# Recurse — increment depth to preserve parent-child nesting
 		for child in node.children:
 			DOMTreeSerializer._collect_orphan_elements(
-				child, include_attributes, lines, landmark_node_ids, depth,
+				child, include_attributes, lines, landmark_node_ids, depth + 1,
 			)
 
 	@staticmethod

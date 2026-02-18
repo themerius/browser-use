@@ -143,6 +143,54 @@ async def test_outline_mode_false_no_regression(httpserver: HTTPServer):
 		await session.event_bus.stop(clear=True, timeout=5)
 
 
+async def test_outline_mode_browser_state_hint(httpserver: HTTPServer):
+	"""When outline_mode=True, browser state description includes format hint."""
+	httpserver.expect_request('/').respond_with_data(WCAG_PAGE, content_type='text/html')
+	base_url = httpserver.url_for('/')
+
+	session = BrowserSession(
+		browser_profile=BrowserProfile(headless=True, user_data_dir=None, keep_alive=True)
+	)
+	await session.start()
+
+	try:
+		await session.navigate_to(base_url)
+		import asyncio
+		await asyncio.sleep(1.0)
+
+		state = await session.get_browser_state_summary()
+
+		import tempfile
+
+		from browser_use.agent.prompts import AgentMessagePrompt
+		from browser_use.filesystem.file_system import FileSystem
+
+		with tempfile.TemporaryDirectory() as tmpdir:
+			fs = FileSystem(base_dir=tmpdir)
+
+			# With outline_mode=True
+			prompt_outline = AgentMessagePrompt(
+				browser_state_summary=state,
+				file_system=fs,
+				outline_mode=True,
+			)
+			desc = prompt_outline._get_browser_state_description()
+			assert 'Outline mode' in desc, f'Missing outline hint in browser state:\n{desc}'
+			assert '(ungrouped)' in desc, f'Missing ungrouped explanation in browser state:\n{desc}'
+
+			# With outline_mode=False — no hint
+			prompt_classic = AgentMessagePrompt(
+				browser_state_summary=state,
+				file_system=fs,
+				outline_mode=False,
+			)
+			desc_classic = prompt_classic._get_browser_state_description()
+			assert 'Outline mode' not in desc_classic
+	finally:
+		await session.kill()
+		await session.event_bus.stop(clear=True, timeout=5)
+
+
 async def test_outline_mode_settings_propagation(httpserver: HTTPServer):
 	"""Verify outline_mode setting is correctly propagated to AgentSettings."""
 	httpserver.expect_request('/').respond_with_data(WCAG_PAGE, content_type='text/html')

@@ -97,6 +97,41 @@ NO_LANDMARK_PAGE = """<!DOCTYPE html>
 </body>
 </html>"""
 
+SELECT_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head><title>Select Test</title></head>
+<body>
+	<main>
+		<h1>Order Form</h1>
+		<form>
+			<label for="plan">Choose plan:</label>
+			<select id="plan" name="plan">
+				<option value="">-- Choose --</option>
+				<option value="basic">Basic Plan</option>
+				<option value="pro">Pro Plan</option>
+				<option value="enterprise">Enterprise Plan</option>
+			</select>
+			<button type="submit">Submit</button>
+		</form>
+	</main>
+</body>
+</html>"""
+
+NESTED_FORM_NO_LANDMARKS = """<!DOCTYPE html>
+<html>
+<head><title>Nested Form</title></head>
+<body>
+	<h1>Contact</h1>
+	<form>
+		<label for="name">Name:</label>
+		<input type="text" id="name" name="name" />
+		<label for="email">Email:</label>
+		<input type="email" id="email" name="email" />
+		<button type="submit">Send</button>
+	</form>
+</body>
+</html>"""
+
 NAMED_VS_UNNAMED_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head><title>Named vs Unnamed</title></head>
@@ -320,3 +355,55 @@ def test_detect_unchanged_regions_no_previous():
 
 	result = detect_unchanged_regions(current, None)
 	assert result == {'main:': False}
+
+
+# ─── Compound component tests ─────────────────────────────────────────────────
+
+async def test_outline_includes_compound_components(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""Outline mode includes select options via compound_components attribute."""
+	httpserver.expect_request('/').respond_with_data(SELECT_PAGE, content_type='text/html')
+	url = httpserver.url_for('/')
+
+	dom_state = await _get_serialized_dom(browser_session, url)
+	outline = dom_state.llm_representation(outline_mode=True)
+
+	# compound_components should appear with option text
+	assert 'compound_components' in outline, f'No compound_components in outline:\n{outline}'
+	assert 'options=' in outline, f'No options= in outline:\n{outline}'
+	# At least one of the plan names should appear
+	assert 'Basic Plan' in outline or 'Pro Plan' in outline, f'No option text in outline:\n{outline}'
+
+
+async def test_classic_and_outline_both_have_compound_info(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""Both classic and outline serialization include compound_components for selects."""
+	httpserver.expect_request('/').respond_with_data(SELECT_PAGE, content_type='text/html')
+	url = httpserver.url_for('/')
+
+	dom_state = await _get_serialized_dom(browser_session, url)
+
+	flat = dom_state.llm_representation(outline_mode=False)
+	outline = dom_state.llm_representation(outline_mode=True)
+
+	assert 'compound_components' in flat, f'Classic missing compound_components:\n{flat}'
+	assert 'compound_components' in outline, f'Outline missing compound_components:\n{outline}'
+
+
+# ─── Orphan depth / nesting tests ─────────────────────────────────────────────
+
+async def test_orphan_elements_have_indentation(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""On a landmarkless page, nested elements have increasing indentation."""
+	httpserver.expect_request('/').respond_with_data(NESTED_FORM_NO_LANDMARKS, content_type='text/html')
+	url = httpserver.url_for('/')
+
+	dom_state = await _get_serialized_dom(browser_session, url)
+	outline = dom_state.llm_representation(outline_mode=True)
+
+	# Find lines with interactive element markers
+	import re
+	interactive_lines = [line for line in outline.split('\n') if re.search(r'\[\d+\]', line)]
+
+	assert len(interactive_lines) >= 2, f'Expected >=2 interactive elements, got:\n{outline}'
+
+	# At least some interactive lines should have tab indentation (depth > 0)
+	indented = [line for line in interactive_lines if line.startswith('\t')]
+	assert len(indented) > 0, f'No indented interactive elements in orphan section:\n{outline}'
