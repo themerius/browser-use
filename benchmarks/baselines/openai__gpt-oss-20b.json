@@ -1,0 +1,190 @@
+{
+  "model": "openai/gpt-oss-20b",
+  "outline_mode": false,
+  "trials_per_task": 1,
+  "tasks": {
+    "Download All Invoices": {
+      "n_trials": 1,
+      "pass_rate": 0.0,
+      "avg_score": 0.5,
+      "avg_steps": 10.0,
+      "std_steps": 0.0,
+      "avg_tokens": 89323.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 183.66186451911926,
+      "avg_error_rate": 0.5,
+      "action_distribution": {
+        "navigate": 6,
+        "wait": 5,
+        "evaluate": 1,
+        "extract": 1,
+        "write_file": 1,
+        "done": 1
+      },
+      "files_downloaded_expected": 8,
+      "avg_files_downloaded": 2.0
+    },
+    "Download Newest Invoice": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 25557.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 24.447036504745483,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "done": 1
+      },
+      "files_downloaded_expected": 1,
+      "avg_files_downloaded": 2.0
+    },
+    "Dropdown Interaction": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 6.0,
+      "std_steps": 0.0,
+      "avg_tokens": 26964.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 39.85817575454712,
+      "avg_error_rate": 0.3333333333333333,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "select_dropdown": 1,
+        "done": 1
+      }
+    },
+    "Extract Structured Data": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 30635.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 21.685784339904785,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "replace_file": 1,
+        "done": 2,
+        "write_file": 2
+      }
+    },
+    "Fill Contact Form": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 3.0,
+      "std_steps": 0.0,
+      "avg_tokens": 21597.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 19.73231077194214,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "input": 3,
+        "click": 1,
+        "done": 1
+      }
+    },
+    "Navigate Multi Page": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 29901.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 17.642505168914795,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "click": 2,
+        "done": 1
+      }
+    },
+    "Search Product": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 6.0,
+      "std_steps": 0.0,
+      "avg_tokens": 71232.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 51.86035180091858,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "input": 1,
+        "click": 1,
+        "wait": 1,
+        "extract": 2,
+        "replace_file": 2,
+        "done": 2,
+        "write_file": 1
+      }
+    },
+    "WCAG Compliant Form": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 4.0,
+      "std_steps": 0.0,
+      "avg_tokens": 33748.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 26.822139978408813,
+      "avg_error_rate": 0.0,
+      "action_distribution": {
+        "navigate": 1,
+        "input": 3,
+        "click": 2,
+        "evaluate": 1,
+        "select_dropdown": 1,
+        "done": 1
+      }
+    },
+    "WCAG Non-Compliant Form": {
+      "n_trials": 1,
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "avg_steps": 6.0,
+      "std_steps": 0.0,
+      "avg_tokens": 41564.0,
+      "std_tokens": 0.0,
+      "avg_cost": 0.0,
+      "avg_duration": 63.55144929885864,
+      "avg_error_rate": 0.3333333333333333,
+      "action_distribution": {
+        "navigate": 1,
+        "input": 6,
+        "click": 4,
+        "evaluate": 2,
+        "wait": 2,
+        "done": 1
+      }
+    }
+  },
+  "aggregate": {
+    "pass_rate": 0.8888888888888888,
+    "avg_score": 0.9444444444444444,
+    "avg_steps": 5.222222222222222,
+    "avg_tokens": 41169.0,
+    "avg_cost": 0.0,
+    "avg_duration": 49.917957570817734
+  },
+  "timestamp": "2026-02-18T08:36:04.933088+00:00"
+}

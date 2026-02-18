@@ -7,9 +7,14 @@ from pathlib import Path
 BASELINES_DIR = Path(__file__).parent / 'baselines'
 
 
+def _model_filename(model: str) -> str:
+	"""Sanitize model name for use as a filename (replace / with __)."""
+	return model.replace('/', '__')
+
+
 def load_baseline(model: str) -> dict | None:
 	"""Load a stored baseline for the given model. Returns None if not found."""
-	path = BASELINES_DIR / f'{model}.json'
+	path = BASELINES_DIR / f'{_model_filename(model)}.json'
 	if not path.exists():
 		return None
 	with open(path, encoding='utf-8') as f:
@@ -19,7 +24,7 @@ def load_baseline(model: str) -> dict | None:
 def save_baseline(model: str, results: dict) -> None:
 	"""Save benchmark results as a baseline for the given model."""
 	BASELINES_DIR.mkdir(parents=True, exist_ok=True)
-	path = BASELINES_DIR / f'{model}.json'
+	path = BASELINES_DIR / f'{_model_filename(model)}.json'
 
 	results['timestamp'] = datetime.now(timezone.utc).isoformat()
 	results['model'] = model

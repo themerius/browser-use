@@ -116,6 +116,7 @@ async def _run_single_trial(
 	server: HTTPServer,
 	trial_num: int,
 	outline_mode: bool = False,
+	use_vision: bool = True,
 ) -> tuple[TaskRunMetrics, int]:
 	"""Run a single trial of a benchmark task.
 
@@ -147,9 +148,16 @@ async def _run_single_trial(
 		if model == 'mock':
 			mock_actions = task.get('mock_actions')
 			llm = _create_mock_llm(actions=mock_actions)
+		elif '/' in model:
+			# Model names containing '/' are routed through OpenRouter
+			# e.g. 'openai/gpt-oss-20b', 'anthropic/claude-3.5-sonnet'
+			from browser_use.llm import ChatOpenRouter
+
+			api_key = os.environ.get('OPENROUTER_API_KEY', '').strip()
+			assert api_key, 'OPENROUTER_API_KEY must be set for OpenRouter models'
+			llm = ChatOpenRouter(model=model, api_key=api_key)
 		else:
 			# Real LLM mode — use ChatOpenAI as default provider.
-			# For other providers, extend with provider-prefixed model names.
 			from browser_use.llm import ChatOpenAI
 
 			llm = ChatOpenAI(model=model)
@@ -161,6 +169,7 @@ async def _run_single_trial(
 			llm=llm,
 			browser_session=session,
 			outline_mode=outline_mode,
+			use_vision=use_vision,
 		)
 
 		history = await agent.run(max_steps=max_steps)
@@ -211,6 +220,7 @@ async def run_benchmark(
 	save_baseline_flag: bool = False,
 	compare_baseline_flag: bool = True,
 	outline_mode: bool = False,
+	use_vision: bool = True,
 ) -> dict:
 	"""Run the full benchmark suite.
 
@@ -260,7 +270,7 @@ async def run_benchmark(
 			trial_metrics: list[TaskRunMetrics] = []
 			trial_download_counts: list[int] = []
 			for trial_num in range(1, trials + 1):
-				metrics, download_count = await _run_single_trial(task, fixture_dict, model, server, trial_num, outline_mode=outline_mode)
+				metrics, download_count = await _run_single_trial(task, fixture_dict, model, server, trial_num, outline_mode=outline_mode, use_vision=use_vision)
 				trial_metrics.append(metrics)
 				trial_download_counts.append(download_count)
 

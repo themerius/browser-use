@@ -68,6 +68,12 @@ def main() -> None:
 		default=False,
 		help='Use hierarchical landmark-grouped outline serialization instead of flat element list',
 	)
+	parser.add_argument(
+		'--no-vision',
+		action='store_true',
+		default=False,
+		help='Disable screenshot/vision input (for text-only models)',
+	)
 
 	args = parser.parse_args()
 
@@ -82,6 +88,7 @@ def main() -> None:
 			save_baseline_flag=args.save_baseline,
 			compare_baseline_flag=args.compare_baseline,
 			outline_mode=args.outline_mode,
+			use_vision=not args.no_vision,
 		)
 	)
 
