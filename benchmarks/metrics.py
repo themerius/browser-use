@@ -1,4 +1,17 @@
-"""Metric extraction from AgentHistoryList and aggregation across trials."""
+"""Metric extraction from AgentHistoryList and aggregation across trials.
+
+Each ``TaskRunMetrics`` captures a single trial: pass/fail, token counts,
+action distribution, and — importantly — failure diagnostics (error messages,
+the model's last reasoning output).  ``TaskAggregateMetrics`` rolls these up
+across N trials of the same task.
+
+Intended consumers:
+    - ``benchmarks/runner.py``  — calls ``extract_metrics`` after each trial
+    - ``benchmarks/report.py``  — reads aggregate + per-trial data for Markdown/JSON
+    - ``benchmarks/trace.py``   — uses ``AgentHistoryList`` directly (not metrics)
+
+When adding fields, keep ``extra='forbid'`` so any typo is caught immediately.
+"""
 
 from collections import Counter
 from statistics import mean, stdev
@@ -9,7 +22,16 @@ from browser_use.agent.views import AgentHistoryList
 
 
 class TaskRunMetrics(BaseModel):
-	"""Metrics extracted from a single agent run."""
+	"""Metrics extracted from a single agent run.
+
+	Fields added for failure diagnosis (see ``extract_metrics`` for how they
+	are populated):
+	- ``error_messages``: actual error strings from each step (not just a count)
+	- ``last_model_reasoning``: the model's thinking/eval/memory/goal on the
+	  final step — the most useful signal when a task fails
+	- ``dom_text_chars``: character count of the serialized DOM text sent to
+	  the LLM on the final step — proxy for DOM token cost
+	"""
 
 	model_config = ConfigDict(extra='forbid')
 
@@ -29,6 +51,11 @@ class TaskRunMetrics(BaseModel):
 	action_distribution: dict[str, int]
 	urls_visited: list[str | None]
 	final_result: str | None
+
+	# --- Failure diagnostics (new) ---
+	error_messages: list[str] = Field(default_factory=list)
+	last_model_reasoning: dict[str, str | None] | None = None
+	dom_text_chars: int | None = None
 
 
 class TaskAggregateMetrics(BaseModel):
@@ -54,10 +81,34 @@ class TaskAggregateMetrics(BaseModel):
 def extract_metrics(history: AgentHistoryList) -> TaskRunMetrics:
 	"""Extract structured metrics from an AgentHistoryList.
 
-	Uses only existing public APIs on AgentHistoryList — zero new instrumentation.
+	Populates both aggregate numbers (tokens, steps) and failure diagnostics
+	(error messages, last model reasoning, DOM size).
 	"""
 	usage = history.usage
 	action_names = history.action_names()
+
+	# --- Failure diagnostics ---
+	# Collect all non-None error strings across all steps
+	error_messages = [e for e in history.errors() if e is not None]
+
+	# Last step's model reasoning — the most useful signal on failure
+	last_model_reasoning = None
+	if history.history:
+		last = history.history[-1]
+		if last.model_output:
+			last_model_reasoning = {
+				'thinking': last.model_output.thinking,
+				'evaluation_previous_goal': last.model_output.evaluation_previous_goal,
+				'memory': last.model_output.memory,
+				'next_goal': last.model_output.next_goal,
+			}
+
+	# DOM text size on the last step — proxy for token cost of the DOM
+	dom_text_chars = None
+	if history.history:
+		last_msg = history.history[-1].state_message
+		if last_msg:
+			dom_text_chars = len(last_msg)
 
 	return TaskRunMetrics(
 		steps=history.number_of_steps(),
@@ -69,11 +120,14 @@ def extract_metrics(history: AgentHistoryList) -> TaskRunMetrics:
 		duration_seconds=history.total_duration_seconds(),
 		success=history.is_successful(),
 		is_done=history.is_done(),
-		error_count=len([e for e in history.errors() if e is not None]),
+		error_count=len(error_messages),
 		action_names=action_names,
 		action_distribution=dict(Counter(action_names)),
 		urls_visited=history.urls(),
 		final_result=history.final_result(),
+		error_messages=error_messages,
+		last_model_reasoning=last_model_reasoning,
+		dom_text_chars=dom_text_chars,
 	)
 
 

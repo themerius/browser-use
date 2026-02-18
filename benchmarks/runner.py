@@ -1,13 +1,28 @@
-"""Benchmark orchestrator: loads tasks, runs trials, collects metrics."""
+"""Benchmark orchestrator: loads tasks, runs trials, collects metrics.
+
+CLI flags relevant to this module:
+    --trace         Write per-step JSONL trace files (see ``benchmarks/trace.py``)
+    --compare-dom   Skip agent runs; just compare classic vs outline serialization
+                    (see ``benchmarks/compare_dom.py``)
+
+The runner returns a results dict consumed by ``benchmarks/report.py`` for
+Markdown/JSON report generation.
+"""
+
+from __future__ import annotations
 
 import logging
 import os
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from pytest_httpserver import HTTPServer
+
+if TYPE_CHECKING:
+	from browser_use.agent.views import AgentHistoryList
 
 import benchmarks.fixtures as fixtures_module
 from benchmarks.baseline import compare, load_baseline, save_baseline
@@ -117,11 +132,14 @@ async def _run_single_trial(
 	trial_num: int,
 	outline_mode: bool = False,
 	use_vision: bool = True,
-) -> tuple[TaskRunMetrics, int]:
+) -> tuple[TaskRunMetrics, int, AgentHistoryList | None]:
 	"""Run a single trial of a benchmark task.
 
 	Returns:
-		Tuple of (metrics, actual_download_count).
+		Tuple of (metrics, actual_download_count, history).
+		``history`` is the full ``AgentHistoryList`` — used by ``--trace`` to
+		write per-step JSONL logs.  It is ``None`` when the trial errors out
+		before the agent produces any history.
 	"""
 	from browser_use import Agent
 
@@ -187,7 +205,7 @@ async def _run_single_trial(
 			'criteria_met': criteria_met,
 		})
 
-		return metrics, actual_downloads
+		return metrics, actual_downloads, history
 
 	except Exception as e:
 		logger.error(f'  Trial {trial_num} of {task_name!r} failed: {e}')
@@ -206,7 +224,8 @@ async def _run_single_trial(
 			action_distribution={},
 			urls_visited=[],
 			final_result=str(e),
-		), 0
+			error_messages=[str(e)],
+		), 0, None
 	finally:
 		await session.kill()
 		await session.event_bus.stop(clear=True, timeout=5)
@@ -221,6 +240,7 @@ async def run_benchmark(
 	compare_baseline_flag: bool = True,
 	outline_mode: bool = False,
 	use_vision: bool = True,
+	trace: bool = False,
 ) -> dict:
 	"""Run the full benchmark suite.
 
@@ -231,6 +251,9 @@ async def run_benchmark(
 		output_dir: Directory for report output.
 		save_baseline_flag: If True, save results as baseline.
 		compare_baseline_flag: If True, compare against stored baseline.
+		outline_mode: If True, use hierarchical outline DOM serialization.
+		use_vision: If True, include screenshots in LLM context.
+		trace: If True, write per-step JSONL trace files (see ``benchmarks/trace.py``).
 
 	Returns:
 		Full results dict.
@@ -270,9 +293,16 @@ async def run_benchmark(
 			trial_metrics: list[TaskRunMetrics] = []
 			trial_download_counts: list[int] = []
 			for trial_num in range(1, trials + 1):
-				metrics, download_count = await _run_single_trial(task, fixture_dict, model, server, trial_num, outline_mode=outline_mode, use_vision=use_vision)
+				metrics, download_count, history = await _run_single_trial(task, fixture_dict, model, server, trial_num, outline_mode=outline_mode, use_vision=use_vision)
 				trial_metrics.append(metrics)
 				trial_download_counts.append(download_count)
+
+				# Write per-step trace if requested
+				if trace and history is not None:
+					from benchmarks.trace import write_trace
+					trace_dir = Path(output_dir) / 'traces'
+					trace_path = write_trace(history, trace_dir, task_name, trial_num)
+					logger.info(f'    Trace written to {trace_path}')
 
 			# Aggregate
 			agg = aggregate_metrics(trial_metrics)
@@ -281,6 +311,22 @@ async def run_benchmark(
 			# Track download metrics for download tasks
 			expected_result = task.get('expected_result', {}) or {}
 			files_downloaded_expected = expected_result.get('files_downloaded')
+
+			# Collect failure diagnostics from individual trials
+			all_errors: list[str] = []
+			per_trial_diagnostics: list[dict] = []
+			dom_char_counts: list[int] = []
+			for t in trial_metrics:
+				all_errors.extend(t.error_messages)
+				per_trial_diagnostics.append({
+					'success': t.success,
+					'final_result': t.final_result,
+					'error_messages': t.error_messages,
+					'last_model_reasoning': t.last_model_reasoning,
+					'dom_text_chars': t.dom_text_chars,
+				})
+				if t.dom_text_chars is not None:
+					dom_char_counts.append(t.dom_text_chars)
 
 			task_result = {
 				'n_trials': agg.n_trials,
@@ -294,6 +340,10 @@ async def run_benchmark(
 				'avg_duration': agg.avg_duration,
 				'avg_error_rate': agg.avg_error_rate,
 				'action_distribution': agg.action_distribution,
+				# Failure diagnostics — useful for debugging failed tasks
+				'error_messages': all_errors,
+				'trial_diagnostics': per_trial_diagnostics,
+				'avg_dom_text_chars': int(sum(dom_char_counts) / len(dom_char_counts)) if dom_char_counts else None,
 			}
 			if files_downloaded_expected is not None:
 				task_result['files_downloaded_expected'] = files_downloaded_expected
