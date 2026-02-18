@@ -94,6 +94,7 @@ def main() -> None:
 	print(f'Trials per task: {results["trials_per_task"]}')
 	if agg:
 		print(f'Overall pass rate: {agg.get("pass_rate", 0) * 100:.1f}%')
+		print(f'Avg score: {agg.get("avg_score", 0):.2f}')
 		print(f'Avg steps: {agg.get("avg_steps", 0):.1f}')
 		print(f'Avg tokens: {agg.get("avg_tokens", 0):,.0f}')
 		print(f'Avg cost: ${agg.get("avg_cost", 0):.4f}')

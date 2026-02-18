@@ -1170,6 +1170,30 @@ class DOMTreeSerializer:
 			DOMTreeSerializer._collect_node_ids(child, ids)
 
 	@staticmethod
+	def _get_outline_ax_label(node: SimplifiedNode) -> str | None:
+		"""Return the AX accessible name for a node if it adds useful context.
+
+		Used in outline mode to annotate interactive elements with their
+		associated label text (e.g. from <label for=...>, aria-label, etc.).
+		Returns None if the name is empty, trivial, or already covered by
+		common attributes (placeholder, aria-label, title, value).
+		"""
+		ax = node.original_node.ax_node
+		if not ax or not ax.name:
+			return None
+		name = ax.name.strip()
+		if not name or len(name) <= 1:
+			return None
+
+		# Skip if the name duplicates an attribute the serializer already emits
+		attrs = node.original_node.attributes or {}
+		for attr_key in ('placeholder', 'aria-label', 'title', 'value', 'alt'):
+			if str(attrs.get(attr_key, '')).strip().lower() == name.lower():
+				return None
+
+		return cap_text_length(name, 80)
+
+	@staticmethod
 	def _serialize_outline_subtree(
 		node: SimplifiedNode,
 		include_attributes: list[str],
@@ -1191,15 +1215,20 @@ class DOMTreeSerializer:
 				lines.append(f'{indent}{md_prefix} {heading_text}')
 			elif node.is_interactive:
 				# Interactive element — use same format as flat serializer
+				# plus ax_name annotation for label context
 				new_prefix = '*' if node.is_new else ''
 				tag = node.original_node.tag_name
+				ax_name = DOMTreeSerializer._get_outline_ax_label(node)
 				attrs_str = DOMTreeSerializer._build_attributes_string(
-					node.original_node, include_attributes, '',
+					node.original_node, include_attributes, ax_name or '',
 				)
 				line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
 				if attrs_str:
 					line += f' {attrs_str}'
 				line += ' />'
+				# Append accessible name if it adds information beyond attributes
+				if ax_name:
+					line += f'  "{ax_name}"'
 				lines.append(line)
 			elif node.original_node.node_type == NodeType.TEXT_NODE:
 				is_visible = node.original_node.snapshot_node and node.original_node.is_visible
@@ -1243,13 +1272,16 @@ class DOMTreeSerializer:
 		elif node.is_interactive:
 			new_prefix = '*' if node.is_new else ''
 			tag = node.original_node.tag_name
+			ax_name = DOMTreeSerializer._get_outline_ax_label(node)
 			attrs_str = DOMTreeSerializer._build_attributes_string(
-				node.original_node, include_attributes, '',
+				node.original_node, include_attributes, ax_name or '',
 			)
 			line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
 			if attrs_str:
 				line += f' {attrs_str}'
 			line += ' />'
+			if ax_name:
+				line += f'  "{ax_name}"'
 			lines.append(line)
 		elif node.original_node.node_type == NodeType.TEXT_NODE:
 			is_visible = node.original_node.snapshot_node and node.original_node.is_visible

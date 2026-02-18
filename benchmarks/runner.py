@@ -58,8 +58,14 @@ def _evaluate_result(
 	expected_result: dict | None,
 	downloads_path: str | None,
 	model: str = 'mock',
-) -> bool:
+) -> tuple[bool, float, dict[str, bool]]:
 	"""Evaluate whether a run meets the programmatic success criteria.
+
+	Returns:
+		Tuple of (passed, score, criteria_met) where:
+		- passed: True only if ALL criteria are satisfied
+		- score: 0.0–1.0 fraction of criteria met (partial credit)
+		- criteria_met: per-criterion breakdown {name: bool}
 
 	In mock mode, files_downloaded is tracked as a metric but not used for
 	pass/fail since mock actions can't trigger real DOM interactions reliably.
@@ -67,26 +73,40 @@ def _evaluate_result(
 	"""
 	if expected_result is None:
 		# No criteria specified, use agent's own success assessment
-		return history.is_successful() is True
+		passed = history.is_successful() is True
+		return passed, 1.0 if passed else 0.0, {'agent_self_assessment': passed}
 
+	criteria_met: dict[str, bool] = {}
 	final = history.final_result() or ''
+	final_lower = final.lower()
 
-	# Check contains criteria
+	# Check contains criteria (case-insensitive to handle LLM phrasing variation)
 	contains = expected_result.get('contains', [])
 	for needle in contains:
-		if needle not in final:
+		key = f'contains:{needle}'
+		found = needle.lower() in final_lower
+		criteria_met[key] = found
+		if not found:
 			logger.info(f'  FAIL: expected result to contain {needle!r}, got: {final[:200]}')
-			return False
 
 	# Check files_downloaded (enforced only with real LLMs)
 	expected_downloads = expected_result.get('files_downloaded')
 	if expected_downloads is not None and downloads_path is not None and model != 'mock':
 		actual = _count_downloads(downloads_path)
-		if actual < expected_downloads:
+		met = actual >= expected_downloads
+		criteria_met[f'files_downloaded>={expected_downloads}'] = met
+		if not met:
 			logger.info(f'  FAIL: expected {expected_downloads} downloads, found {actual}')
-			return False
 
-	return True
+	# Compute partial score
+	if criteria_met:
+		n_met = sum(1 for v in criteria_met.values() if v)
+		score = n_met / len(criteria_met)
+	else:
+		score = 1.0  # No criteria = vacuously satisfied
+
+	passed = all(criteria_met.values()) if criteria_met else True
+	return passed, score, criteria_met
 
 
 async def _run_single_trial(
@@ -150,9 +170,13 @@ async def _run_single_trial(
 
 		# Override success based on programmatic evaluation
 		expected_result = task.get('expected_result')
-		programmatic_success = _evaluate_result(history, expected_result, downloads_dir, model=model)
+		passed, score, criteria_met = _evaluate_result(history, expected_result, downloads_dir, model=model)
 		actual_downloads = _count_downloads(downloads_dir)
-		metrics = metrics.model_copy(update={'success': programmatic_success})
+		metrics = metrics.model_copy(update={
+			'success': passed,
+			'score': score,
+			'criteria_met': criteria_met,
+		})
 
 		return metrics, actual_downloads
 
@@ -251,6 +275,7 @@ async def run_benchmark(
 			task_result = {
 				'n_trials': agg.n_trials,
 				'pass_rate': agg.pass_rate,
+				'avg_score': agg.avg_score,
 				'avg_steps': agg.avg_steps,
 				'std_steps': agg.std_steps,
 				'avg_tokens': agg.avg_tokens,
@@ -268,7 +293,7 @@ async def run_benchmark(
 			all_task_results[task_name] = task_result
 
 			logger.info(
-				f'  {task_name}: pass_rate={agg.pass_rate:.0%}, avg_steps={agg.avg_steps:.1f}, avg_tokens={agg.avg_tokens:.0f}'
+				f'  {task_name}: pass_rate={agg.pass_rate:.0%}, avg_score={agg.avg_score:.2f}, avg_steps={agg.avg_steps:.1f}, avg_tokens={agg.avg_tokens:.0f}'
 			)
 
 		finally:
@@ -282,6 +307,7 @@ async def run_benchmark(
 		total_passes = sum(a.pass_rate * a.n_trials for a in all_aggregates)
 		suite_aggregate = {
 			'pass_rate': total_passes / total_trials if total_trials > 0 else 0,
+			'avg_score': sum(a.avg_score * a.n_trials for a in all_aggregates) / total_trials if total_trials > 0 else 0,
 			'avg_steps': sum(a.avg_steps for a in all_aggregates) / len(all_aggregates),
 			'avg_tokens': sum(a.avg_tokens for a in all_aggregates) / len(all_aggregates),
 			'avg_cost': sum(a.avg_cost for a in all_aggregates) / len(all_aggregates),

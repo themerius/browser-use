@@ -21,6 +21,8 @@ class TaskRunMetrics(BaseModel):
 	total_cost: float
 	duration_seconds: float
 	success: bool | None
+	score: float = 0.0  # Partial score 0.0–1.0 (fraction of criteria met)
+	criteria_met: dict[str, bool] = Field(default_factory=dict)  # Per-criterion breakdown
 	is_done: bool
 	error_count: int
 	action_names: list[str]
@@ -36,6 +38,7 @@ class TaskAggregateMetrics(BaseModel):
 
 	n_trials: int
 	pass_rate: float
+	avg_score: float = 0.0  # Average partial score across trials
 	avg_steps: float
 	std_steps: float
 	avg_tokens: float
@@ -84,6 +87,7 @@ def aggregate_metrics(trials: list[TaskRunMetrics]) -> TaskAggregateMetrics:
 	tokens_list = [t.total_tokens for t in trials]
 	cost_list = [t.total_cost for t in trials]
 	duration_list = [t.duration_seconds for t in trials]
+	score_list = [t.score for t in trials]
 
 	# Error rate per trial: errors / steps (avoid division by zero)
 	error_rates = [t.error_count / t.steps if t.steps > 0 else 0.0 for t in trials]
@@ -96,6 +100,7 @@ def aggregate_metrics(trials: list[TaskRunMetrics]) -> TaskAggregateMetrics:
 	return TaskAggregateMetrics(
 		n_trials=n,
 		pass_rate=successes / n,
+		avg_score=mean(score_list),
 		avg_steps=mean(steps_list),
 		std_steps=stdev(steps_list) if n > 1 else 0.0,
 		avg_tokens=mean(tokens_list),

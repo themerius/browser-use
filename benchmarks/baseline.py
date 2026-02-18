@@ -43,6 +43,7 @@ def compare(current: dict, baseline: dict) -> dict:
 
 	metrics_config = {
 		'pass_rate': {'format': 'pp', 'better': 'higher'},
+		'avg_score': {'format': 'float', 'better': 'higher'},
 		'avg_steps': {'format': 'float', 'better': 'lower'},
 		'avg_tokens': {'format': 'int', 'better': 'lower'},
 		'avg_cost': {'format': 'float', 'better': 'lower'},
@@ -90,6 +91,7 @@ def compare(current: dict, baseline: dict) -> dict:
 		base_task = baseline_tasks[task_name]
 		task_deltas[task_name] = {
 			'pass_rate_delta': cur_task.get('pass_rate', 0) - base_task.get('pass_rate', 0),
+			'avg_score_delta': cur_task.get('avg_score', 0) - base_task.get('avg_score', 0),
 			'avg_steps_delta': cur_task.get('avg_steps', 0) - base_task.get('avg_steps', 0),
 			'avg_tokens_delta': cur_task.get('avg_tokens', 0) - base_task.get('avg_tokens', 0),
 		}
