@@ -938,7 +938,6 @@ class SerializedDOMState:
 		self,
 		include_attributes: list[str] | None = None,
 		outline_mode: bool = False,
-		previous_landmarks: list[Any] | None = None,
 	) -> str:
 		"""Kinda ugly, but leaving this as an internal method because include_attributes are a parameter on the agent, so we need to leave it as a 2 step process"""
 		from browser_use.dom.serializer.serializer import DOMTreeSerializer
@@ -949,9 +948,7 @@ class SerializedDOMState:
 		include_attributes = include_attributes or DEFAULT_INCLUDE_ATTRIBUTES
 
 		if outline_mode:
-			return DOMTreeSerializer.serialize_outline_tree(
-				self._root, include_attributes, previous_landmarks=previous_landmarks,
-			)
+			return DOMTreeSerializer.serialize_outline_tree(self._root, include_attributes)
 
 		return DOMTreeSerializer.serialize_tree(self._root, include_attributes)
 

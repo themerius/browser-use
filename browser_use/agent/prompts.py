@@ -125,7 +125,6 @@ class AgentMessagePrompt:
 		unavailable_skills_info: str | None = None,
 		plan_description: str | None = None,
 		outline_mode: bool = False,
-		previous_landmarks: list | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -147,7 +146,6 @@ class AgentMessagePrompt:
 		self.plan_description: str | None = plan_description
 		self.llm_screenshot_size = llm_screenshot_size
 		self.outline_mode = outline_mode
-		self.previous_landmarks = previous_landmarks
 		assert self.browser_state
 
 	def _extract_page_statistics(self) -> dict[str, int]:
@@ -240,7 +238,6 @@ class AgentMessagePrompt:
 		elements_text = self.browser_state.dom_state.llm_representation(
 			include_attributes=self.include_attributes,
 			outline_mode=self.outline_mode,
-			previous_landmarks=self.previous_landmarks,
 		)
 
 		if len(elements_text) > self.max_clickable_elements_length:
@@ -317,7 +314,7 @@ class AgentMessagePrompt:
 			closed_popups_text += '\n'
 
 		outline_hint = ''
-		if self.outline_mode:
+		if self.outline_mode and '=== PAGE OUTLINE ===' in elements_text:
 			outline_hint = (
 				'(Outline mode: elements grouped by page landmark — BANNER, NAVIGATION, MAIN, CONTENTINFO etc. '
 				'Headings shown as # H1, ## H2. Elements use same [index]<tag attrs /> format. '

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-	from browser_use.dom.serializer.outline import LandmarkRegion
+from typing import Any
 
 from browser_use.dom.serializer.clickable_elements import ClickableElementDetector
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
@@ -1107,25 +1104,23 @@ class DOMTreeSerializer:
 	def serialize_outline_tree(
 		node: SimplifiedNode | None,
 		include_attributes: list[str],
-		previous_landmarks: 'list[LandmarkRegion] | None' = None,
 	) -> str:
 		"""Serialize the DOM tree in hierarchical outline mode.
 
 		Groups interactive elements under landmark regions (BANNER, NAV, MAIN,
-		etc.) and annotates with heading hierarchy.  Unchanged regions between
-		steps are collapsed to save tokens.
+		etc.) and annotates with heading hierarchy.  Pages without any
+		landmarks fall back to classic flat serialization automatically.
 		"""
-		from browser_use.dom.serializer.outline import (
-			_region_key,
-			detect_landmarks,
-			detect_unchanged_regions,
-		)
+		from browser_use.dom.serializer.outline import detect_landmarks
 
 		if not node:
 			return ''
 
 		landmarks = detect_landmarks(node)
-		unchanged = detect_unchanged_regions(landmarks, previous_landmarks)
+
+		# No landmarks detected — fall back to classic serialization
+		if not landmarks:
+			return DOMTreeSerializer.serialize_tree(node, include_attributes)
 
 		# Collect nodes that belong to a landmark (by id) so we can detect orphans
 		landmark_node_ids: set[int] = set()
@@ -1135,34 +1130,30 @@ class DOMTreeSerializer:
 		lines: list[str] = ['=== PAGE OUTLINE ===']
 
 		for lm in landmarks:
-			key = _region_key(lm)
 			header = lm.role.upper()
 			if lm.name:
 				header += f': "{lm.name}"'
 
-			if unchanged.get(key, False):
-				# Collapsed view
-				lines.append(f'{header} (unchanged, {lm.element_count} elements)')
-			else:
-				lines.append(f'{header}:')
-				# Serialize the landmark's children
-				DOMTreeSerializer._serialize_outline_subtree(
-					lm.node, include_attributes, lines, depth=1, skip_root=True,
-				)
+			# Collect sub-region node ids to avoid duplicating elements
+			sub_region_ids: set[int] = set()
+			for sub in lm.sub_regions:
+				DOMTreeSerializer._collect_node_ids(sub.node, sub_region_ids)
+
+			lines.append(f'{header}:')
+			DOMTreeSerializer._serialize_outline_subtree(
+				lm.node, include_attributes, lines, depth=1, skip_root=True,
+				exclude_ids=sub_region_ids or None,
+			)
 
 			# Nested sub-regions
 			for sub in lm.sub_regions:
-				sub_key = _region_key(sub)
 				sub_header = f'  {sub.role.upper()}'
 				if sub.name:
 					sub_header += f': "{sub.name}"'
-				if unchanged.get(sub_key, False):
-					lines.append(f'{sub_header} (unchanged, {sub.element_count} elements)')
-				else:
-					lines.append(f'{sub_header}:')
-					DOMTreeSerializer._serialize_outline_subtree(
-						sub.node, include_attributes, lines, depth=2, skip_root=True,
-					)
+				lines.append(f'{sub_header}:')
+				DOMTreeSerializer._serialize_outline_subtree(
+					sub.node, include_attributes, lines, depth=2, skip_root=True,
+				)
 
 		# Orphan elements — not inside any landmark
 		orphan_lines: list[str] = []
@@ -1214,9 +1205,14 @@ class DOMTreeSerializer:
 		lines: list[str],
 		depth: int = 0,
 		skip_root: bool = False,
+		exclude_ids: set[int] | None = None,
 	) -> None:
 		"""Serialize a subtree for outline mode, emitting headings and interactive elements."""
 		from browser_use.dom.serializer.outline import _get_heading_level, _get_heading_text
+
+		# Skip subtrees belonging to a nested sub-region (they're serialized separately)
+		if exclude_ids and id(node) in exclude_ids:
+			return
 
 		indent = '\t' * depth
 
@@ -1263,6 +1259,7 @@ class DOMTreeSerializer:
 		for child in node.children:
 			DOMTreeSerializer._serialize_outline_subtree(
 				child, include_attributes, lines, child_depth,
+				exclude_ids=exclude_ids,
 			)
 
 	@staticmethod

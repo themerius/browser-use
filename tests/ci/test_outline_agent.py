@@ -176,7 +176,7 @@ async def test_outline_mode_browser_state_hint(httpserver: HTTPServer):
 			)
 			desc = prompt_outline._get_browser_state_description()
 			assert 'Outline mode' in desc, f'Missing outline hint in browser state:\n{desc}'
-			assert '(ungrouped)' in desc, f'Missing ungrouped explanation in browser state:\n{desc}'
+			assert '=== PAGE OUTLINE ===' in desc, f'Missing outline markers in browser state:\n{desc}'
 
 			# With outline_mode=False — no hint
 			prompt_classic = AgentMessagePrompt(

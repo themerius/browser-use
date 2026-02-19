@@ -1108,12 +1108,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			skip_state_update=True,
 		)
 
-		# After serialization, update landmark state for outline mode cross-step collapsing
-		if self.settings.outline_mode and browser_state_summary.dom_state and browser_state_summary.dom_state._root:
-			from browser_use.dom.serializer.outline import detect_landmarks
-
-			self._message_manager.previous_landmarks = detect_landmarks(browser_state_summary.dom_state._root)
-
 		await self._inject_budget_warning(step_info)
 		self._inject_replan_nudge()
 		self._inject_exploration_nudge()

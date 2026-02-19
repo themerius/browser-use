@@ -1,7 +1,7 @@
 """Tests for the hierarchical outline serialization mode (Plan 3).
 
 Validates landmark detection, heading hierarchy extraction, outline formatting,
-region collapsing, and backward compatibility with flat serialization.
+landmarkless fallback, deduplication, and backward compatibility with flat serialization.
 """
 
 import os
@@ -205,18 +205,20 @@ async def test_heading_hierarchy_in_outline(browser_session: BrowserSession, htt
 	assert 'Product Catalog' in outline or 'Featured Products' in outline
 
 
-async def test_no_landmarks_produces_ungrouped(browser_session: BrowserSession, httpserver: HTTPServer):
-	"""Page with no semantic landmarks puts elements under (ungrouped)."""
+async def test_no_landmarks_falls_back_to_classic(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""Page with no semantic landmarks falls back to classic flat serialization."""
 	httpserver.expect_request('/').respond_with_data(NO_LANDMARK_PAGE, content_type='text/html')
 	url = httpserver.url_for('/')
 
 	dom_state = await _get_serialized_dom(browser_session, url)
 	outline = dom_state.llm_representation(outline_mode=True)
+	classic = dom_state.llm_representation(outline_mode=False)
 
-	# Should have outline structure
-	assert '=== PAGE OUTLINE ===' in outline
-	# Elements outside landmarks go to ungrouped
-	assert '(ungrouped)' in outline.lower() or 'MAIN' in outline.upper()
+	# Should NOT have outline markers — falls back to classic
+	assert '=== PAGE OUTLINE ===' not in outline
+	assert '(ungrouped)' not in outline
+	# Should produce identical output to classic mode
+	assert outline == classic
 
 
 async def test_named_vs_unnamed_regions(browser_session: BrowserSession, httpserver: HTTPServer):
@@ -277,24 +279,23 @@ async def test_outline_shorter_than_flat_for_landmark_page(browser_session: Brow
 	assert len(outline) > 0
 
 
-async def test_region_collapsing_unchanged_regions(browser_session: BrowserSession, httpserver: HTTPServer):
-	"""When previous_landmarks match current, regions show as collapsed."""
+async def test_nested_landmark_deduplication(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""Elements inside a nested landmark (nav inside header) only appear under the sub-region."""
 	httpserver.expect_request('/').respond_with_data(LANDMARK_PAGE, content_type='text/html')
 	url = httpserver.url_for('/')
 
 	dom_state = await _get_serialized_dom(browser_session, url)
+	outline = dom_state.llm_representation(outline_mode=True)
 
-	# First pass — no previous landmarks
-	outline_first = dom_state.llm_representation(outline_mode=True, previous_landmarks=None)
-	assert '(unchanged' not in outline_first
+	import re
+	# Count how many times each interactive element index appears
+	all_indices = re.findall(r'\[(\d+)\]', outline)
+	from collections import Counter
+	counts = Counter(all_indices)
 
-	# Detect current landmarks for "previous" state
-	from browser_use.dom.serializer.outline import detect_landmarks
-	landmarks = detect_landmarks(dom_state._root)
-
-	# Second pass with same landmarks — regions should be collapsed
-	outline_second = dom_state.llm_representation(outline_mode=True, previous_landmarks=landmarks)
-	assert '(unchanged' in outline_second
+	# No element index should appear more than once
+	duplicates = {idx: cnt for idx, cnt in counts.items() if cnt > 1}
+	assert not duplicates, f'Duplicate element indices in outline: {duplicates}\n\nOutline:\n{outline}'
 
 
 # ─── Unit tests for outline.py pure functions ─────────────────────────────────
@@ -390,20 +391,19 @@ async def test_classic_and_outline_both_have_compound_info(browser_session: Brow
 
 # ─── Orphan depth / nesting tests ─────────────────────────────────────────────
 
-async def test_orphan_elements_have_indentation(browser_session: BrowserSession, httpserver: HTTPServer):
-	"""On a landmarkless page, nested elements have increasing indentation."""
+async def test_landmarkless_page_has_interactive_elements(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""On a landmarkless page (classic fallback), interactive elements are still present."""
 	httpserver.expect_request('/').respond_with_data(NESTED_FORM_NO_LANDMARKS, content_type='text/html')
 	url = httpserver.url_for('/')
 
 	dom_state = await _get_serialized_dom(browser_session, url)
 	outline = dom_state.llm_representation(outline_mode=True)
 
-	# Find lines with interactive element markers
+	# Falls back to classic — should have interactive element markers
 	import re
 	interactive_lines = [line for line in outline.split('\n') if re.search(r'\[\d+\]', line)]
 
 	assert len(interactive_lines) >= 2, f'Expected >=2 interactive elements, got:\n{outline}'
 
-	# At least some interactive lines should have tab indentation (depth > 0)
-	indented = [line for line in interactive_lines if line.startswith('\t')]
-	assert len(indented) > 0, f'No indented interactive elements in orphan section:\n{outline}'
+	# Should NOT have outline markers (classic fallback)
+	assert '=== PAGE OUTLINE ===' not in outline

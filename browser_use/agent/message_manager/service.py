@@ -129,7 +129,6 @@ class MessageManager:
 		self.sample_images = sample_images
 		self.llm_screenshot_size = llm_screenshot_size
 		self.outline_mode = outline_mode
-		self.previous_landmarks: list | None = None
 
 		assert max_history_items is None or max_history_items > 5, 'max_history_items must be None or greater than 5'
 
@@ -484,7 +483,6 @@ class MessageManager:
 			unavailable_skills_info=unavailable_skills_info,
 			plan_description=plan_description,
 			outline_mode=self.outline_mode,
-			previous_landmarks=self.previous_landmarks,
 		).get_user_message(effective_use_vision)
 
 		# Store state message text for history
