@@ -21,10 +21,11 @@ os.environ['ANONYMIZED_TELEMETRY'] = 'false'
 def register_fixture_routes(server: HTTPServer, fixture_dict: dict[str, str | bytes | dict]) -> None:
 	"""Register all routes from a fixture's path→content dict with an HTTPServer.
 
-	Handles three content types:
+	Handles four content types:
 	- str: HTML content served as text/html
 	- bytes: Binary data served as application/octet-stream
 	- dict: Rich response with 'data', 'content_type', and optional 'headers'
+	- callable: Dynamic handler (werkzeug Request → Response)
 	"""
 	for path, content in fixture_dict.items():
 		# Separate query string from path (pytest-httpserver requires them separate)
@@ -32,7 +33,9 @@ def register_fixture_routes(server: HTTPServer, fixture_dict: dict[str, str | by
 		uri = parsed.path
 		qs = parsed.query or None
 
-		if isinstance(content, dict):
+		if callable(content):
+			server.expect_request(uri, query_string=qs).respond_with_handler(content)
+		elif isinstance(content, dict):
 			server.expect_request(uri, query_string=qs).respond_with_data(
 				content['data'],
 				content_type=content.get('content_type', 'application/octet-stream'),

@@ -1,6 +1,7 @@
 """HTML fixture generators for benchmark scenarios.
 
-Each function returns a dict[str, str | bytes] mapping URL paths to response content.
+Each function returns a dict[str, str | bytes | callable] mapping URL paths to response
+content.  Callables receive a werkzeug Request and must return a Response (dynamic routes).
 Registered with pytest-httpserver for reproducible local testing.
 """
 
@@ -157,7 +158,39 @@ def extract_structured_data() -> dict[str, str]:
 
 
 def dropdown_interaction() -> dict[str, str]:
-	"""Form with native <select> dropdown, submit, and confirmation."""
+	"""Form with native <select> dropdown, submit, and confirmation.
+
+	The /confirm handler validates the posted product value so the benchmark
+	actually tests whether the agent selected the correct dropdown option
+	(not just whether it landed on a static confirmation page).
+	"""
+
+	def _confirm_handler(request):
+		from werkzeug.wrappers import Response
+
+		product = request.form.get('product', '')
+		product_labels = {
+			'basic': 'Basic Plan',
+			'pro': 'Pro Plan',
+			'enterprise': 'Enterprise Plan',
+		}
+		label = product_labels.get(product)
+		if label:
+			html = f"""<!DOCTYPE html>
+<html><head><title>Order Confirmed</title></head>
+<body>
+	<h1>Order Confirmed!</h1>
+	<p class="confirmation">Your order for the {label} has been placed successfully.</p>
+</body></html>"""
+		else:
+			html = """<!DOCTYPE html>
+<html><head><title>Order Error</title></head>
+<body>
+	<h1>Order Error</h1>
+	<p class="error">No valid product was selected. Please go back and choose a product.</p>
+</body></html>"""
+		return Response(html, content_type='text/html')
+
 	return {
 		'/': """<!DOCTYPE html>
 <html><head><title>Order Form</title></head>
@@ -174,12 +207,7 @@ def dropdown_interaction() -> dict[str, str]:
 		<button type="submit">Place Order</button>
 	</form>
 </body></html>""",
-		'/confirm': """<!DOCTYPE html>
-<html><head><title>Order Confirmed</title></head>
-<body>
-	<h1>Order Confirmed!</h1>
-	<p class="confirmation">Your order for the Pro Plan has been placed successfully.</p>
-</body></html>""",
+		'/confirm': _confirm_handler,
 	}
 
 

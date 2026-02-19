@@ -1109,7 +1109,8 @@ class DOMTreeSerializer:
 
 		Groups interactive elements under landmark regions (BANNER, NAV, MAIN,
 		etc.) and annotates with heading hierarchy.  Pages without any
-		landmarks fall back to classic flat serialization automatically.
+		landmarks use outline subtree rendering directly (no landmark
+		grouping but preserves accessible labels and clean formatting).
 		"""
 		from browser_use.dom.serializer.outline import detect_landmarks
 
@@ -1118,9 +1119,17 @@ class DOMTreeSerializer:
 
 		landmarks = detect_landmarks(node)
 
-		# No landmarks detected — fall back to classic serialization
+		# No landmarks detected — use outline subtree rendering directly.
+		# We do NOT fall back to raw classic serialization because classic
+		# mode introduces |SHADOW(open)| noise on native form elements and
+		# omits accessible-name annotations, both of which degrade LLM
+		# action selection (e.g. model picks click instead of select_dropdown).
 		if not landmarks:
-			return DOMTreeSerializer.serialize_tree(node, include_attributes)
+			lines: list[str] = []
+			DOMTreeSerializer._serialize_outline_subtree(
+				node, include_attributes, lines, depth=0, skip_root=True,
+			)
+			return '\n'.join(lines)
 
 		# Collect nodes that belong to a landmark (by id) so we can detect orphans
 		landmark_node_ids: set[int] = set()

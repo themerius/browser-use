@@ -205,20 +205,28 @@ async def test_heading_hierarchy_in_outline(browser_session: BrowserSession, htt
 	assert 'Product Catalog' in outline or 'Featured Products' in outline
 
 
-async def test_no_landmarks_falls_back_to_classic(browser_session: BrowserSession, httpserver: HTTPServer):
-	"""Page with no semantic landmarks falls back to classic flat serialization."""
+async def test_no_landmarks_uses_outline_subtree_rendering(browser_session: BrowserSession, httpserver: HTTPServer):
+	"""Page with no semantic landmarks uses outline subtree rendering (not raw classic).
+
+	This preserves accessible-label annotations and suppresses shadow DOM noise
+	that classic mode would introduce (e.g. |SHADOW(open)| on native <select>).
+	"""
 	httpserver.expect_request('/').respond_with_data(NO_LANDMARK_PAGE, content_type='text/html')
 	url = httpserver.url_for('/')
 
 	dom_state = await _get_serialized_dom(browser_session, url)
 	outline = dom_state.llm_representation(outline_mode=True)
-	classic = dom_state.llm_representation(outline_mode=False)
 
-	# Should NOT have outline markers — falls back to classic
+	# Should NOT have outline markers — no landmarks to group under
 	assert '=== PAGE OUTLINE ===' not in outline
 	assert '(ungrouped)' not in outline
-	# Should produce identical output to classic mode
-	assert outline == classic
+	# Should still have interactive elements
+	assert 'button' in outline.lower()
+	assert 'input' in outline.lower()
+	# Outline subtree renderer adds accessible-label annotations
+	# that classic mode omits — this is the key benefit
+	assert 'Logo' in outline
+	assert 'Type here' in outline
 
 
 async def test_named_vs_unnamed_regions(browser_session: BrowserSession, httpserver: HTTPServer):
