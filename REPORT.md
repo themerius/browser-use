@@ -262,3 +262,72 @@
 - **Security is the unsolved problem**
   - Prompt injection via web content, tool permission escalation, visual dark pattern susceptibility
   - Enterprise adoption blocked until governance/audit tooling matures
+
+## 10. Tool-Mediated DOM Querying: Let the LLM Search Instead of Read
+
+- **The problem with "dump everything into context"**
+  - browser-use currently serializes the full interactive DOM into every prompt — 5–40K characters (~3–15K tokens) per step
+  - Most tasks at any given step need information from a small fraction of the page: "find the login button" requires ~1 element, not all 250
+  - The LLM must attend to the full serialized DOM even when 95% of it is irrelevant to the current action
+  - For small language models (SLMs) with 4–8K context windows, the full DOM physically cannot fit, making them unable to operate at all
+
+- **The proposal: query tools over pre-extracted data**
+  - Instead of (or in addition to) dumping the full serialized DOM, give the LLM tool-call functions that query the already-extracted DOM data: `query_elements(role="button", text="Submit")`, `get_page_summary()`, `get_region(landmark="MAIN")`, `get_element_details(index=47)`
+  - These tools operate on the pre-extracted `SerializedDOMState` and `SimplifiedNode` tree — no redundant CDP calls, full access to accessibility enrichments, element indices consistent with click/type actions
+  - The LLM receives a compact page summary (landmark structure, heading hierarchy, element counts) and drills into specific regions on demand
+  - This is conceptually a **RAG pattern applied to DOM navigation** — retrieve relevant elements instead of reading everything
+
+- **Literature support**
+  - **Prune4Web** (arXiv:2511.21398, Nov 2025): Programmatic DOM pruning improved grounding accuracy from 46.8% to 88.3% — nearly doubling element selection correctness by filtering before LLM consumption
+  - **"How Good Are LLMs at Processing Tool Outputs?"** (arXiv:2510.15955, Oct 2025): Simplified tool responses improve accuracy by 8–38 percentage points; full responses are 12x larger than the relevant subset on average
+  - **MEM1** (arXiv:2506.15841, Jun 2025, NeurIPS Workshop Oral): Constant-memory agents trained to discard irrelevant context achieve 3.5x performance improvement and 3.7x memory reduction versus full-context agents of twice their parameter count
+  - **Mind2Web / MindAct** (NeurIPS 2023 Spotlight): Established the two-stage filter→select pattern as standard for web agents — a small model filters DOM elements, then the LLM selects from the filtered set
+  - **ReAct** (Yao et al., ICLR 2023): Progressive information gathering via tool calls outperforms dump-all approaches — the only method that combined web interaction with correct reasoning
+  - **"Long Context vs. RAG"** (arXiv:2501.01880, Dec 2024): RAG outperforms full-context on fragmented, multi-source data. Serialized DOM trees on complex pages exhibit the fragmented structure where retrieval wins
+
+- **Why this is distinct from existing browser-use tools**
+  - `search_page` and `find_elements` already exist as query tools — but they execute fresh JavaScript via CDP `Runtime.evaluate`, bypassing the pre-extracted DOM data entirely
+  - They don't have access to accessibility tree enrichments (roles, names, states), paint order analysis, or bounding box data from the extraction pipeline
+  - Their results don't reference element indices that the agent uses for click/type actions — creating a grounding gap
+  - The proposed query tools operate on the *already-extracted* data, preserving all enrichments and maintaining index consistency
+
+- **Three operating modes (progressive adoption)**
+  - **OFF** (default): Full serialized DOM in context every step — current behavior, 100% backward compatible
+  - **HYBRID**: Compact page summary (~500–1500 tokens) in context + query tools available for drilling into specific regions. Recommended starting point.
+  - **QUERY_ONLY**: Minimal page metadata (~100–300 tokens) + all element access via query tools. Maximum token savings, ideal for SLMs with small context windows. Higher risk if query formulation is poor.
+
+- **Estimated impact**
+
+  | Metric | Full DOM (current) | Hybrid Mode | Query-Only Mode |
+  |---|---|---|---|
+  | Tokens per step (250-element page) | ~12,000 | ~2,500 | ~1,100 |
+  | Token reduction | — | ~58–64% | ~75–85% |
+  | Steps for "find and click button" | 1 | 2 (query + act) | 2–3 |
+  | Net token cost per task | Baseline | ~40–60% lower | ~60–80% lower |
+  | SLM viable (sub-4B, 4–8K context) | No | Marginal | Yes |
+
+- **SLM enablement is the strongest argument**
+  - For frontier models (128K+ context), query mode is an optimization — useful but not essential
+  - For SLMs (1–7B parameters, 4–32K context), query mode is a **prerequisite** — the full DOM simply doesn't fit
+  - SLMs are surprisingly capable at function calling: xLAM-1B achieves 78.9% on Berkeley Function Calling Leaderboard (beating GPT-3.5-Turbo), Octopus v2 (2B) achieves 99.5% at 0.38s latency
+  - The scaling law from §8 extends: `required_model_size ≈ f(task_complexity / (input_structure_quality × data_access_efficiency))` — better query tools reduce effective task complexity further than structure alone
+  - **Concrete prediction**: query mode + Plan 3 outline could enable sub-3B models to navigate pages that currently require GPT-4o-mini, because the combined approach eliminates both the need to infer page structure (outline) and the need to process irrelevant elements (query filtering)
+
+- **Relationship to Plan 3 (Hierarchical Outline)**
+  - Plan 3 restructures *how* the DOM is presented (flat list → hierarchical outline). Plan 4 restructures *when and how much* DOM is presented (all-at-once → on-demand via tool calls).
+  - They are **complementary, not competing**: Plan 3's outline serves as the compact summary in Plan 4's hybrid mode; Plan 4's query tools provide the drill-down mechanism that Plan 3's `focus_region` action hints at
+  - Combined: the LLM sees a landmark-structured outline, then uses `query_elements` or `get_region` to access specific sections — the screen reader analogy taken to its logical conclusion
+  - Individual validation: each plan has independent value. Plan 3 alone improves structure. Plan 4 alone reduces tokens. Together they multiply.
+
+- **Key risks**
+  - **Query formulation quality**: LLMs must articulate what they're looking for. If the button says "Sign In" but the LLM searches for "login", it misses the target. Mitigation: fuzzy matching, accessible name matching, synonym expansion.
+  - **Extra step overhead**: Each query adds an LLM round-trip. For simple tasks on small pages, this overhead may exceed token savings. Mitigation: hybrid mode provides enough context that queries may be unnecessary for simple tasks.
+  - **Unfamiliar pattern**: Current LLMs are trained on agents that see full DOM. Query-based navigation is a less common distribution. Mitigation: system prompt instructions, few-shot examples; long-term: fine-tuning on query-mode trajectories.
+  - **Poor landmark structure**: SPAs with flat DOM (everything in `<div id="root">`) may not provide useful landmarks for `within_landmark` queries. Mitigation: text/role search still works; graceful degradation.
+
+- **Implementation feasibility**
+  - The core query engine is ~200 lines of pure functions operating on `SimplifiedNode` + `DOMSelectorMap` — all data already extracted by the existing pipeline
+  - Query actions register via the existing `@tools.registry.action()` decorator — same mechanism as all built-in actions
+  - `dom_state` injection into tools uses the existing `SpecialActionParameters` mechanism
+  - The agent prompt changes are conditional on `query_mode` setting — zero impact when disabled
+  - No changes to CDP data collection, DOM extraction, or action execution
