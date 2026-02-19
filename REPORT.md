@@ -277,13 +277,16 @@
   - The LLM receives a compact page summary (landmark structure, heading hierarchy, element counts) and drills into specific regions on demand
   - This is conceptually a **RAG pattern applied to DOM navigation** — retrieve relevant elements instead of reading everything
 
-- **Literature support**
-  - **Prune4Web** (arXiv:2511.21398, Nov 2025): Programmatic DOM pruning improved grounding accuracy from 46.8% to 88.3% — nearly doubling element selection correctness by filtering before LLM consumption
-  - **"How Good Are LLMs at Processing Tool Outputs?"** (arXiv:2510.15955, Oct 2025): Simplified tool responses improve accuracy by 8–38 percentage points; full responses are 12x larger than the relevant subset on average
-  - **MEM1** (arXiv:2506.15841, Jun 2025, NeurIPS Workshop Oral): Constant-memory agents trained to discard irrelevant context achieve 3.5x performance improvement and 3.7x memory reduction versus full-context agents of twice their parameter count
-  - **Mind2Web / MindAct** (NeurIPS 2023 Spotlight): Established the two-stage filter→select pattern as standard for web agents — a small model filters DOM elements, then the LLM selects from the filtered set
-  - **ReAct** (Yao et al., ICLR 2023): Progressive information gathering via tool calls outperforms dump-all approaches — the only method that combined web interaction with correct reasoning
-  - **"Long Context vs. RAG"** (arXiv:2501.01880, Dec 2024): RAG outperforms full-context on fragmented, multi-source data. Serialized DOM trees on complex pages exhibit the fragmented structure where retrieval wins
+- **Literature support — with extractable implementation patterns**
+  - **Prune4Web** (arXiv:2511.21398, Nov 2025): Programmatic DOM pruning improved grounding accuracy from 46.8% to 88.3%. The key mechanism: the LLM generates a `keyword_weights` dictionary (not arbitrary code), which feeds a fixed scoring template with **three-tier attribute matching** (visible text > aria/accessibility attrs > class/id) × **four match types** (exact > phrase > word > fuzzy via `rapidfuzz`) + `PorterStemmer` normalization. Achieves 97.6% Recall@20.
+  - **Mind2Web / MindAct** (NeurIPS 2023 Spotlight): The two-stage filter→select pipeline uses a DeBERTa cross-encoder (~86M params) to rank all DOM elements against a task query, then presents **top candidates in batches of 5 as multi-choice questions** via a single-elimination tournament. The cross-encoder scores `[element_repr, query]` pairs where element_repr includes ancestor path + subtree with only salient attributes (aria-label, role, placeholder, etc.). Recall@50 ≈ 85%.
+  - **Agent-E** (Emergence AI, arXiv:2407.13032): Two-tier planner/navigator architecture where the planner **never sees raw DOM** (only natural language success/failure reports). The navigator chooses between three **adaptive DOM representation modes**: `text_only` (for reading), `input_fields` (for form interaction), `all_fields` (for layout understanding). Achieves 73.2% on WebVoyager.
+  - **MEM1** (arXiv:2506.15841, Jun 2025, NeurIPS Workshop Oral): Uses **architectural constraint (hard context truncation) + outcome-only RL** to teach a 7B model what to keep in a constant-size internal state. 3.5x performance, 3.7x memory reduction vs. full-context 14B baseline.
+  - **Octopus v2** (arXiv:2404.01744): Adds **functional tokens** (new vocabulary entries representing functions) to a 2B model. Function selection becomes single-token classification. 99.5% accuracy, 0.38s latency, 95% context reduction. Training requires only 500–1000 examples per function.
+  - **Salesforce xLAM / APIGen**: Three-stage training data verification — format check → actual execution → LLM semantic judge. A 1B model trained on 60K verified examples achieves 78.9% on Berkeley Function Calling Leaderboard, beating GPT-3.5-Turbo.
+  - **ScribeAgent** (arXiv:2411.15004): Includes mandatory **natural language rationale** in output format (Description field). This CoT-in-training-data approach lets a 32B model outperform o1-preview on Mind2Web.
+  - **LASER** (NeurIPS 2023): Models web navigation as a **finite state machine** with state-constrained action spaces. Invalid actions are structurally impossible per state, eliminating entire error categories.
+  - **Plan-and-Act / Narada Operator** (ICML 2025): Separating planner from executor reaches 64.16% on WebArena — vs. 14% for vanilla ReAct. The planner handles strategy; the executor handles DOM grounding. This is the emerging consensus architecture.
 
 - **Why this is distinct from existing browser-use tools**
   - `search_page` and `find_elements` already exist as query tools — but they execute fresh JavaScript via CDP `Runtime.evaluate`, bypassing the pre-extracted DOM data entirely
@@ -319,11 +322,11 @@
   - Combined: the LLM sees a landmark-structured outline, then uses `query_elements` or `get_region` to access specific sections — the screen reader analogy taken to its logical conclusion
   - Individual validation: each plan has independent value. Plan 3 alone improves structure. Plan 4 alone reduces tokens. Together they multiply.
 
-- **Key risks**
-  - **Query formulation quality**: LLMs must articulate what they're looking for. If the button says "Sign In" but the LLM searches for "login", it misses the target. Mitigation: fuzzy matching, accessible name matching, synonym expansion.
-  - **Extra step overhead**: Each query adds an LLM round-trip. For simple tasks on small pages, this overhead may exceed token savings. Mitigation: hybrid mode provides enough context that queries may be unnecessary for simple tasks.
-  - **Unfamiliar pattern**: Current LLMs are trained on agents that see full DOM. Query-based navigation is a less common distribution. Mitigation: system prompt instructions, few-shot examples; long-term: fine-tuning on query-mode trajectories.
-  - **Poor landmark structure**: SPAs with flat DOM (everything in `<div id="root">`) may not provide useful landmarks for `within_landmark` queries. Mitigation: text/role search still works; graceful degradation.
+- **Key risks — with literature-informed mitigations**
+  - **Query formulation quality**: If the button says "Sign In" but the LLM searches for "login", it misses. Mitigation: Prune4Web's tiered scoring with `rapidfuzz` fuzzy matching + `PorterStemmer` normalization catches these variants (97.6% Recall@20). Additionally, matching against `ax_node.name` (accessible name) normalizes labels across sites.
+  - **Extra step overhead**: Each query adds an LLM round-trip. Mitigation: hybrid mode provides a structural summary sufficient for simple tasks without querying. LASER's state-machine pattern suggests nudging the natural flow (summary → query → act) without hard constraints.
+  - **Unfamiliar pattern**: Current LLMs are trained on agents that see full DOM. Mitigation: APIGen's three-stage verification (format → execution → semantic) produces high-quality training data. ScribeAgent showed including rationales in training teaches models to reason about queries. Octopus v2's functional tokens approach could reduce the query interface to single-token classification for fine-tuned SLMs.
+  - **Poor landmark structure**: SPAs with flat DOM may lack landmarks. Mitigation: text/role search and heading scoping still work. Agent-E's adaptive content-type modes (`text_only`, `input_fields`, `all_fields`) provide fallback representations when landmarks are absent.
 
 - **Implementation feasibility**
   - The core query engine is ~200 lines of pure functions operating on `SimplifiedNode` + `DOMSelectorMap` — all data already extracted by the existing pipeline

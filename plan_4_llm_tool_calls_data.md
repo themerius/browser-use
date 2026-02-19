@@ -33,6 +33,189 @@ browser-use already partially validates this — `search_page` and `find_element
 
 ---
 
+## Concrete Patterns Extracted from Literature
+
+The following patterns are not just cited — they are specific, implementable techniques extracted from the actual code and architectures of the most relevant systems. Plan 4's query engine should incorporate these directly.
+
+### Pattern 1: Keyword-Weighted Scoring (from Prune4Web)
+
+Prune4Web's key insight: **don't ask the LLM to write arbitrary search queries — ask it to generate a structured `keyword_weights` dictionary**, then run a fixed scoring template over DOM attributes.
+
+```python
+# What the LLM generates (the ONLY LLM output for filtering):
+keyword_weights = {
+    "add to cart": 40,
+    "buy now": 35,
+    "shopping cart": 25,
+    "purchase": 20,
+}
+```
+
+The scoring template (hardcoded, not LLM-generated) applies:
+
+1. **Three-tier attribute matching** with priority multipliers:
+   - Tier 1 (highest): visible `text` / `text_content` — what the user actually sees
+   - Tier 2 (medium): `aria-label`, `placeholder`, `alt`, `title` — semantic accessibility attributes
+   - Tier 3 (lowest): `class`, `id`, other HTML attributes — may contain CSS noise
+
+2. **Four match types** (descending weight):
+   - Exact: full string equality after stemming
+   - Phrase: keyword appears as contiguous phrase within attribute text
+   - Word: individual stemmed word match
+   - Fuzzy: `rapidfuzz` similarity above threshold (catches "Sign In" → "login" type mismatches)
+
+3. **Stemming via `nltk.PorterStemmer`** normalizes morphological variants ("purchasing" → "purchase", "added" → "add").
+
+**Impact**: This scoring formula + Top-20 selection achieves **~97.6% Recall@20** — the ground truth element is almost always in the filtered set. And it's pure Python over pre-extracted data, no LLM call needed for the actual scoring.
+
+**How to apply in Plan 4**: The `query_elements` tool should use this tiered scoring internally instead of simple substring matching. When the `text` parameter is provided, it should:
+- Apply PorterStemmer to both the query and all element text
+- Score elements using the three-tier attribute hierarchy
+- Use `rapidfuzz` for fuzzy matching as a fallback tier
+- Return Top-N by score, not just first-N matches
+
+Additionally, consider an alternative query mode where the LLM generates `keyword_weights` instead of structured filter parameters — this is Prune4Web's approach and it's proven more robust for small models.
+
+### Pattern 2: Tournament Selection for Candidates (from Mind2Web/MindAct)
+
+When query tools return many candidates (>5), dumping all results back to the LLM creates the same context overload problem we're trying to solve. MindAct's solution: **present candidates in batches of 5 as multi-choice questions**.
+
+The algorithm:
+1. Shuffle all query results randomly
+2. Present 5 candidates to the LLM: "Which of these matches your goal? A. None / B. [47] button 'Add to Cart' / C. [48] button 'Buy Now' / ..."
+3. Winner goes back into the pool, losers are eliminated
+4. Repeat until 1 candidate remains
+
+This is a **single-elimination tournament** — O(log n) LLM calls to select from n candidates, each call with only 5 options. Much cheaper than showing all candidates at once.
+
+**How to apply in Plan 4**: When `query_elements` returns >5 results and the LLM is in query-only mode, the system could automatically enter a "tournament refinement" sub-loop. In hybrid mode (where the LLM has context to decide), this is less necessary — the LLM can scan 10–20 results. But for SLMs with small context windows, tournament selection is critical.
+
+### Pattern 3: Adaptive DOM Representation Modes (from Agent-E)
+
+Agent-E's navigator **chooses between three content-type modes** per sub-task:
+
+| Mode | Returns | Use When |
+|---|---|---|
+| `text_only` | Just visible text content (no tags, no attributes) | Reading prices, article content, extracting information |
+| `input_fields` | Only interactive elements with `mmid` references | Filling forms, clicking controls |
+| `all_fields` | Full distilled DOM with hierarchy preserved | Comprehensive page understanding |
+
+The navigator decides the mode based on the current sub-task semantics. "Read the product price" → `text_only`. "Fill in the shipping form" → `input_fields`. "Understand the page layout" → `all_fields`.
+
+**How to apply in Plan 4**: The `get_region` tool should accept a `content_type` parameter:
+
+```python
+class GetRegionAction(BaseModel):
+    landmark: str = Field(...)
+    heading_scope: str | None = Field(default=None, ...)
+    content_type: Literal['interactive', 'text', 'full'] = Field(
+        default='interactive',
+        description='What to return: "interactive" (buttons/inputs/links only), '
+        '"text" (readable content only), "full" (everything with hierarchy)',
+    )
+```
+
+This lets the LLM choose the appropriate level of detail per query, mirroring how a human would "scan for text" vs. "look at the form fields."
+
+### Pattern 4: State-Constrained Action Spaces (from LASER)
+
+LASER models web navigation as a **finite state machine** where valid actions depend on the current page state:
+- On a search page: only `search[query]` is valid
+- On a results page: `click[item]`, `click[next_page]`, `search[new_query]`
+- On an item page: `click[buy]`, `click[back]`, `search[new_query]`
+
+Invalid actions (e.g., "click buy" on a search page) are **structurally impossible** — they aren't in the action schema for that state.
+
+**How to apply in Plan 4**: When query mode is active, the available query tools should be **page-state-aware**:
+- First visit to a page → `get_page_summary` is recommended (system prompt nudge)
+- After `get_page_summary` → `query_elements` and `get_region` become the primary tools
+- After `query_elements` returns results → browser actions (click, type) become the natural next step
+- If the page URL changes → automatically invalidate cached query results and nudge toward `get_page_summary`
+
+This isn't strict constraint (the LLM can still call any tool), but the system prompt and action descriptions should guide the natural flow. LASER showed that just constraining the action space improves success rate by eliminating entire categories of invalid actions.
+
+### Pattern 5: Functional Tokens for SLM Fine-Tuning (from Octopus v2)
+
+Octopus v2 adds **new tokens to the vocabulary** that each represent a function. Instead of generating `query_elements(role="button", text="Submit")` (many tokens), a fine-tuned SLM generates `<query_btn_submit>` (one token) plus arguments.
+
+Implementation:
+1. Add special tokens `<nexa_0>` ... `<nexa_N>` + `<nexa_end>` to the tokenizer
+2. Expand the language model's output embedding by N+1 units
+3. Fine-tune with **weighted cross-entropy loss** (special tokens get W > 1.0 weight because they're rare vs. the vast existing vocabulary)
+4. At inference: function descriptions are NOT in context — the knowledge is baked into token embeddings. This achieves **95% context length reduction**.
+
+Result: 2B model, 99.5% function calling accuracy, 0.38s latency.
+
+**How to apply in Plan 4**: For the SLM fine-tuning track (long-term), define functional tokens for the query tools:
+- `<bu_query>` → `query_elements`
+- `<bu_summary>` → `get_page_summary`
+- `<bu_region>` → `get_region`
+- `<bu_details>` → `get_element_details`
+- `<bu_click>` → `click_element`
+- `<bu_type>` → `input_text`
+- `<bu_end>` → end of action
+
+A fine-tuned 2B model could then emit: `<bu_query> role="button" text="cart" <bu_end>` — a total of ~8 tokens instead of ~30 for the full JSON action format. This makes SLM-based web agents viable on-device.
+
+### Pattern 6: Three-Stage Verification for Training Data (from Salesforce APIGen)
+
+Building training data for query-mode fine-tuning requires verification at three levels:
+
+1. **Format checking** (deterministic): Is the query JSON valid? Do all parameter names exist in the schema? Are types correct?
+2. **Execution verification** (sandboxed): Execute the generated query against the actual pre-extracted DOM. Does it return results? Does it throw errors? Does the result contain the ground-truth target element?
+3. **Semantic verification** (LLM judge): Does the query's intent match the task description? Would a human write this query for this task?
+
+xLAM's ablation shows that removing any stage causes significant performance drops. Models trained on unverified data perform substantially worse.
+
+**How to apply in Plan 4**: When building the query-mode training dataset:
+- Collect (task, page_state, ground_truth_element) triples from existing Mind2Web / WebArena data
+- Generate query tool calls using a capable model (GPT-4o)
+- Stage 1: validate JSON format against `QueryElementsAction` schema
+- Stage 2: execute against the actual pre-extracted DOM, verify ground-truth element is in results
+- Stage 3: LLM judge rates whether the query semantically aligns with the task
+- Only verified triples enter the training set
+
+### Pattern 7: Natural Language Rationales in Output (from ScribeAgent)
+
+ScribeAgent's output includes a mandatory **Description** field explaining *why* the action is being taken:
+
+```
+Step: 3
+Description: Click on the "Submit" button to complete the form
+Operation: CLICK
+Element: node-42
+Target: <button id="submit-btn">Submit</button>
+```
+
+Including the rationale in the training data teaches the model to reason about actions, not just pattern-match. ScribeAgent-Large (32B) outperforms o1-preview on Mind2Web despite being smaller, partly because the rationale generation forces chain-of-thought reasoning.
+
+**How to apply in Plan 4**: The `AgentOutput` already includes `thinking` and `next_goal` fields, which serve a similar purpose. But for query actions specifically, the system prompt should encourage the LLM to articulate its search intent:
+
+```
+thinking: "I need to find the checkout button. It's likely in the MAIN content area,
+           probably labeled 'Checkout' or 'Proceed to Checkout'."
+action: [{"query_elements": {"text": "checkout", "role": "button", "within_landmark": "MAIN"}}]
+```
+
+The `thinking` field naturally serves as the rationale. When generating training data for fine-tuning, we should include this thinking→query mapping as part of the training signal.
+
+### Pattern 8: Plan-Execute Separation (from Agent-E + Plan-and-Act)
+
+The converging architectural pattern across SOTA systems (Agent-E, Plan-and-Act / Narada Operator at 64.16% on WebArena) is **separating planning from execution**:
+- The **planner** reasons about the full task, decomposes into sub-goals, never sees raw DOM
+- The **executor** handles individual steps with ReAct-style grounding, sees DOM data
+
+This separation is critical because it prevents the LLM from being overwhelmed by simultaneously reasoning about high-level strategy AND low-level DOM details.
+
+**How to apply in Plan 4**: The query tools naturally create this separation:
+1. The planner (the `thinking`/`next_goal` fields in `AgentOutput`) reasons about what to do next at a semantic level
+2. The query tools serve as the execution layer — the LLM's "hands" for finding specific elements
+3. In query-only mode especially, the LLM must plan before querying (it has no DOM to scan), making the plan-execute separation emergent rather than imposed
+
+For the advanced version: consider a dual-agent architecture where a planner LLM (can be small, no DOM access) generates sub-goals, and a navigator LLM (with query tools) executes them. This mirrors Agent-E's architecture but uses query tools instead of Agent-E's content-type modes.
+
+---
+
 ## Current State
 
 ### What the LLM Receives Today
@@ -189,8 +372,8 @@ This is the "table of contents" that Plan 3's §8 describes — but delivered on
 
 ```python
 class GetRegionAction(BaseModel):
-	"""Get all interactive elements within a specific landmark region. Use after
-	get_page_summary to drill into a region of interest."""
+	"""Get elements within a specific landmark region. Use after get_page_summary
+	to drill into a region of interest. Choose content_type based on your goal."""
 
 	landmark: str = Field(
 		description='Landmark to expand: "MAIN", "NAV:Primary", "SEARCH", "BANNER", '
@@ -200,7 +383,15 @@ class GetRegionAction(BaseModel):
 		default=None,
 		description='Further restrict to elements under a specific heading within the landmark',
 	)
+	content_type: str = Field(
+		default='interactive',
+		description='What to return: "interactive" (buttons/inputs/links with indices — '
+		'for clicking/typing), "text" (readable content only — for extracting info), '
+		'"full" (everything with hierarchy preserved — for understanding layout)',
+	)
 ```
+
+The `content_type` parameter follows Agent-E's adaptive DOM representation pattern. The navigator chooses the view appropriate to the current sub-task: `interactive` for form-filling and clicking (most common), `text` for information extraction (reading prices, article content), `full` for orientation on unfamiliar pages.
 
 **Return format**:
 ```
@@ -295,17 +486,21 @@ def query_elements(
 ) -> list[QueryResult]:
 ```
 
-**Implementation approach**:
+**Implementation approach** (incorporating Prune4Web's tiered scoring):
+
 1. Walk the `SimplifiedNode` tree depth-first
-2. For each node with an element index (interactive element), check all filter criteria:
-   - `text`: case-insensitive substring match on `node.text` and all child text content
-   - `role`: match against `node.original_node.ax_node.role` or HTML tag mapping (button, a→link, input→textbox, etc.)
-   - `name`: match against `node.original_node.ax_node.name` (accessible name)
-   - `attributes`: match against `node.original_node.attributes` dict
-   - `within_landmark`: check if node is a descendant of a landmark node with the specified role (uses `ax_node.role` on ancestors)
-   - `near_heading`: find heading elements matching the text, then return interactive elements between that heading and the next heading of same or higher level
-3. All criteria are AND-combined — each additional filter narrows the result
+2. For each node with an element index (interactive element):
+   - **Structural filters** (hard constraints, AND-combined): `role`, `within_landmark`, `near_heading`, `attributes` — if specified, elements not matching are immediately excluded
+   - **Text matching** (soft scoring via Prune4Web pattern): when `text` or `name` is provided, score remaining elements using tiered attribute matching:
+     - Tier 1: visible text content (`node.text`, child text) — highest weight
+     - Tier 2: accessible name (`ax_node.name`), `aria-label`, `placeholder`, `alt`, `title` — medium weight
+     - Tier 3: `class`, `id`, other attributes — lowest weight
+   - For each tier, apply four match types (descending score): Exact → Phrase → Word → Fuzzy (`rapidfuzz`)
+   - Apply `nltk.PorterStemmer` to both query terms and element text for morphological normalization
+3. Rank by composite score, return Top-N
 4. Return `QueryResult` objects preserving the element index
+
+This tiered scoring approach is critical for robustness. Simple substring matching fails when the LLM searches for "login" but the button says "Sign In" — fuzzy matching with stemming catches this. Prune4Web achieved **97.6% Recall@20** with this approach.
 
 ```python
 @dataclass
@@ -667,10 +862,22 @@ The bottleneck for SLMs is not tool calling — it's context processing. Query m
 
 ### Required Tool-Calling Infrastructure
 
-For SLMs that don't support structured output via JSON schema:
-1. **Function-calling format**: Many SLMs support OpenAI-compatible function calling (Gorilla, xLAM, Octopus)
-2. **Regex-constrained generation**: Tools like Outlines (dottxt-ai/outlines) enforce schema compliance via regex-guided sampling
-3. **Fine-tuning on query patterns**: A small dataset of (page_summary → query_tool_call → action) trajectories would be sufficient. The training signal is clear: did the query return the right element?
+For SLMs that don't support structured output via JSON schema, three approaches (ordered by increasing investment):
+
+1. **OpenAI-compatible function calling** (zero training): Many SLMs support this natively (Gorilla, xLAM, Qwen2.5). browser-use's `SchemaOptimizer` already generates JSON schemas compatible with this format. Query tools register like any other action — no SLM-specific changes needed.
+
+2. **Regex-constrained generation** (zero training): Tools like Outlines (dottxt-ai/outlines) enforce schema compliance via regex-guided sampling during inference. This guarantees valid JSON output even from models not specifically trained for function calling. Cost: slight latency increase during generation.
+
+3. **Functional tokens fine-tuning** (from Octopus v2, requires training): Add special tokens to the tokenizer vocabulary representing each query tool:
+   ```
+   <bu_query> → query_elements    <bu_summary> → get_page_summary
+   <bu_region> → get_region       <bu_details> → get_element_details
+   <bu_click> → click_element     <bu_type> → input_text
+   <bu_end> → end of action
+   ```
+   Fine-tune with **weighted cross-entropy loss** (W > 1.0 for special tokens, since they're rare vs. existing vocabulary). Octopus v2 achieved 99.5% accuracy with this approach on Gemma-2B. Training requires ~500–1000 examples per function (per Octopus v2 ablation), producible via APIGen's three-stage verification pipeline from existing Mind2Web/WebArena data.
+
+4. **Full query-mode fine-tuning** (highest investment, highest payoff): Collect (task, page_state, query_tool_call, action, rationale) trajectories. Verify via APIGen's three-stage pipeline: format check → execution verification (does query return target element?) → semantic verification (LLM judge). Train with LoRA (rank 64, per ScribeAgent) on Qwen2.5-7B or similar. ScribeAgent showed this approach can outperform o1-preview on web tasks with a 32B model.
 
 ---
 
@@ -729,9 +936,9 @@ Plan 3 (outline) restructures the serialization format. Plan 4 (query tools) res
 - **Test infrastructure**: Plan 1's benchmark suite measures impact
 
 ### Medium Risk
-- **Query formulation quality**: LLMs must formulate good queries. If the LLM searches for "login" but the button says "Sign In", it misses the element. Mitigation: fuzzy matching, synonym expansion, accessible name matching (which often normalizes labels).
-- **Extra steps overhead**: Each query adds a step. For simple tasks on small pages, this overhead exceeds the token savings. Mitigation: hybrid mode provides a summary that may suffice for simple tasks, avoiding queries entirely. The agent can also request `get_full_dom` as fallback.
-- **Unfamiliar pattern for LLMs**: Current LLMs are trained on web agents that see full DOM. Query-based navigation is a less common training distribution. Mitigation: clear system prompt instructions, few-shot examples. Long-term: fine-tuning on query-mode trajectories.
+- **Query formulation quality**: LLMs must formulate good queries. If the LLM searches for "login" but the button says "Sign In", it misses the element. Mitigation (from Prune4Web): tiered attribute matching with fuzzy scoring via `rapidfuzz` + `PorterStemmer` normalization catches morphological variants and near-matches. Prune4Web achieves 97.6% Recall@20 with this approach. Additionally, the `name` field matches against `ax_node.name` (accessible name), which normalizes labels across sites.
+- **Extra steps overhead**: Each query adds a step. For simple tasks on small pages, this overhead exceeds the token savings. Mitigation: hybrid mode provides a summary that may suffice for simple tasks, avoiding queries entirely. LASER's state-machine pattern suggests nudging the agent flow (summary → query → act) without hard constraints, keeping flexibility.
+- **Unfamiliar pattern for LLMs**: Current LLMs are trained on web agents that see full DOM. Query-based navigation is a less common training distribution. Mitigation: clear system prompt instructions. For fine-tuning, APIGen's three-stage verification pipeline (format → execution → semantic) ensures high-quality training data. ScribeAgent showed that including rationales in training data ("Description" field) teaches models to reason about queries, not just pattern-match.
 
 ### Higher Risk
 - **Complex page layouts**: SPAs with flat DOM structure (everything in `<div id="root">`) may have no useful landmarks for `within_landmark` queries. Mitigation: text search and heading scoping still work; graceful degradation to role/text matching.
