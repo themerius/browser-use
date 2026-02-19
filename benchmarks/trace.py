@@ -42,6 +42,7 @@ Each JSONL line has this schema::
             "memory":                   str | null,
             "next_goal":                str | null,
             "action_names":             list[str],   # e.g. ["click", "input_text"]
+            "actions":                  list[dict],  # full action params (done text, click index, etc.)
         },
         "action_names":  list[str], # flattened action names for quick scanning
         "errors":        list[str], # error messages from action results (empty = success)
@@ -88,9 +89,12 @@ def write_trace(
 			if h.model_output:
 				raw_actions = list(h.model_output.action) if h.model_output.action else []
 				action_names = []
+				action_details: list[dict] = []
 				for a in raw_actions:
-					keys = list(a.model_dump(exclude_none=True).keys())
+					dumped = a.model_dump(exclude_none=True)
+					keys = list(dumped.keys())
 					action_names.extend(keys)
+					action_details.append(dumped)
 
 				model_out = {
 					'thinking': h.model_output.thinking,
@@ -98,6 +102,7 @@ def write_trace(
 					'memory': h.model_output.memory,
 					'next_goal': h.model_output.next_goal,
 					'action_names': action_names,
+					'actions': action_details,
 				}
 
 			# --- Errors ---

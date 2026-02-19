@@ -3,6 +3,7 @@
 import os
 import socketserver
 import tempfile
+from urllib.parse import urlparse
 
 from pytest_httpserver import HTTPServer
 
@@ -26,19 +27,24 @@ def register_fixture_routes(server: HTTPServer, fixture_dict: dict[str, str | by
 	- dict: Rich response with 'data', 'content_type', and optional 'headers'
 	"""
 	for path, content in fixture_dict.items():
+		# Separate query string from path (pytest-httpserver requires them separate)
+		parsed = urlparse(path)
+		uri = parsed.path
+		qs = parsed.query or None
+
 		if isinstance(content, dict):
-			server.expect_request(path).respond_with_data(
+			server.expect_request(uri, query_string=qs).respond_with_data(
 				content['data'],
 				content_type=content.get('content_type', 'application/octet-stream'),
 				headers=content.get('headers', {}),
 			)
 		elif isinstance(content, bytes):
-			server.expect_request(path).respond_with_data(
+			server.expect_request(uri, query_string=qs).respond_with_data(
 				content,
 				content_type='application/octet-stream',
 			)
 		else:
-			server.expect_request(path).respond_with_data(
+			server.expect_request(uri, query_string=qs).respond_with_data(
 				content,
 				content_type='text/html',
 			)
