@@ -1,5 +1,30 @@
 # @file purpose: Landmark detection, heading hierarchy extraction, and region
 # change detection for the outline serialization mode (Plan 3).
+#
+# Design decisions and known traps:
+#
+# 1. **No region collapsing**: An earlier iteration (v2) tried to detect
+#    "unchanged" regions across steps and collapse them with a summary line.
+#    This hid interactive elements from the LLM, causing WCAG form tasks to
+#    spiral (13 steps, 161s).  Region collapsing was removed entirely in v3.
+#
+# 2. **Landmarkless pages**: When ``detect_landmarks`` returns an empty list,
+#    the caller (``serialize_outline_tree``) must NOT fall back to classic
+#    ``serialize_tree``.  Classic mode introduces ``|SHADOW(open)|`` prefixes
+#    on native form elements (Chrome's internal shadow DOM) which misleads LLMs
+#    into using ``click`` instead of ``select_dropdown``.  Instead, the caller
+#    uses ``_serialize_outline_subtree`` directly on the root node — preserving
+#    accessible-name annotations and clean formatting.
+#    See: benchmarks/reports/outline_v3 (dropdown FAIL) vs v4 (dropdown PASS).
+#
+# 3. **Sub-region deduplication**: Elements inside nested landmarks (e.g. a
+#    ``<nav>`` inside a ``<header>``) are emitted only under the most specific
+#    landmark.  The parent landmark's subtree serializer receives an
+#    ``exclude_ids`` set to skip the nested region's nodes.
+#
+# 4. **Named-only roles**: ``form`` and ``region`` landmarks are only included
+#    when they have an accessible name (WAI-ARIA spec).  This avoids noisy
+#    grouping under every ``<form>`` or ``<section>`` tag.
 
 from __future__ import annotations
 

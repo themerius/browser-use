@@ -3,6 +3,31 @@
 Each function returns a dict[str, str | bytes | callable] mapping URL paths to response
 content.  Callables receive a werkzeug Request and must return a Response (dynamic routes).
 Registered with pytest-httpserver for reproducible local testing.
+
+**When to use dynamic handlers (callable) instead of static HTML**:
+
+  Use a callable whenever the benchmark needs to verify that the agent actually
+  performed a real interaction, not just landed on a page.  Static confirmation
+  pages create false positives — e.g. a ``/confirm`` page that always says
+  "Pro Plan" regardless of what dropdown option was selected.  A handler that
+  checks ``request.form['product']`` catches this.
+
+  Pattern::
+
+      def my_fixture():
+          def _confirm_handler(request):
+              from werkzeug.wrappers import Response
+              value = request.form.get('field', '')
+              if value == 'expected':
+                  return Response('<h1>Success</h1>', content_type='text/html')
+              return Response('<h1>Error</h1>', content_type='text/html')
+
+          return {
+              '/': '<form action="/confirm" method="post">...</form>',
+              '/confirm': _confirm_handler,
+          }
+
+  See ``dropdown_interaction()`` for the canonical example.
 """
 
 

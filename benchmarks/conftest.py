@@ -1,4 +1,20 @@
-"""Shared fixtures for the benchmark suite."""
+"""Shared fixtures for the benchmark suite.
+
+Key design note — **callable handlers for dynamic routes**:
+
+  Static fixture dicts (path → HTML string) are the default for most benchmark
+  tasks.  But for tasks where the *server response depends on user input* (e.g.
+  validating a POST form body), fixtures can map a path to a callable instead.
+  The callable receives a ``werkzeug.wrappers.Request`` and must return a
+  ``werkzeug.wrappers.Response``.
+
+  This was added after discovering that the Dropdown Interaction benchmark
+  gave a false positive: the ``/confirm`` page was a static HTML page that
+  always showed "Pro Plan" regardless of what the agent actually selected.
+  Making it a handler that checks ``request.form['product']`` turned an
+  undetectable regression into a caught failure.  See ``dropdown_interaction``
+  in ``benchmarks/fixtures/__init__.py`` for the canonical example.
+"""
 
 import os
 import socketserver

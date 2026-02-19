@@ -85,6 +85,26 @@ def _evaluate_result(
 	In mock mode, files_downloaded is tracked as a metric but not used for
 	pass/fail since mock actions can't trigger real DOM interactions reliably.
 	With real LLMs, files_downloaded is enforced.
+
+	**Pitfall — ``contains`` checks the agent's ``done`` text, not the page**:
+
+	  The ``contains`` criterion is matched against the text the LLM passes to
+	  the ``done(text=...)`` action.  This means pass/fail depends on *how the
+	  model phrases its summary*, not on what the page actually displayed.
+
+	  Example: Dropdown Interaction's confirm page shows ``"Order Confirmed!"``
+	  but the model might only quote the body paragraph
+	  (``"Your order for the Pro Plan has been placed successfully."``),
+	  omitting the heading.  If ``expected_result.contains`` is
+	  ``["Order Confirmed"]``, the task fails despite the page being correct.
+
+	  Mitigations:
+	    1. Make fixtures validate server-side (use callable handlers that
+	       check POST/query values — see ``benchmarks/conftest.py`` docstring).
+	    2. Choose ``contains`` needles that are likely to appear in any
+	       reasonable summary (e.g. a product name rather than a heading).
+	    3. Consider adding a ``page_contains`` criterion that checks the
+	       actual page HTML/text at the final URL, not the model's summary.
 	"""
 	if expected_result is None:
 		# No criteria specified, use agent's own success assessment

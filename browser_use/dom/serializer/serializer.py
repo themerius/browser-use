@@ -1,4 +1,29 @@
-# @file purpose: Serializes enhanced DOM trees to string format for LLM consumption
+# @file purpose: Serializes enhanced DOM trees to string format for LLM consumption.
+#
+# Two serialization modes:
+#
+#   1. **Classic** (``serialize_tree``): Flat rendering of the DOM tree.  Every
+#      visible element is emitted with its tag, attributes, and text.  Shadow
+#      hosts are annotated with ``|SHADOW(open)|`` / ``|SHADOW(closed)|``
+#      prefixes — including browser-internal shadow roots on native form
+#      elements like ``<select>`` and ``<input>``.
+#
+#   2. **Outline** (``serialize_outline_tree``): Groups interactive elements
+#      under semantic landmark regions (BANNER, NAV, MAIN, etc.) with heading
+#      hierarchy.  Uses ``_serialize_outline_subtree`` which:
+#        - Omits ``|SHADOW(…)|`` prefixes entirely (avoids confusing native
+#          browser shadow DOM with author-created web components).
+#        - Appends AX accessible-name annotations (e.g. ``"Select Product:"``)
+#          after interactive elements, giving the LLM label context.
+#
+#      **Landmarkless pages**: When no semantic landmarks are detected, outline
+#      mode uses ``_serialize_outline_subtree`` directly on the root — it does
+#      NOT fall back to classic ``serialize_tree``.  This was a deliberate
+#      decision after benchmarking showed that falling back to classic caused
+#      LLMs to use ``click`` instead of ``select_dropdown`` on native
+#      ``<select>`` elements, because the ``|SHADOW(open)|`` prefix misled the
+#      model into treating it as a custom web component.
+#      See: benchmarks/reports/outline_v3 vs outline_v4 for evidence.
 
 from __future__ import annotations
 
@@ -883,7 +908,15 @@ class DOMTreeSerializer:
 
 	@staticmethod
 	def serialize_tree(node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
-		"""Serialize the optimized tree to string format."""
+		"""Serialize the optimized tree to classic flat string format.
+
+		NOTE: This emits ``|SHADOW(open)|`` prefixes on ALL shadow hosts,
+		including native form elements (``<select>``, ``<input>``, etc.)
+		whose shadow roots are browser-internal implementation details.
+		This is known to confuse LLMs into using ``click`` instead of
+		``select_dropdown`` on native ``<select>`` elements.  Outline mode
+		avoids this — see ``serialize_outline_tree`` and its module docstring.
+		"""
 		if not node:
 			return ''
 
@@ -1216,7 +1249,18 @@ class DOMTreeSerializer:
 		skip_root: bool = False,
 		exclude_ids: set[int] | None = None,
 	) -> None:
-		"""Serialize a subtree for outline mode, emitting headings and interactive elements."""
+		"""Serialize a subtree for outline mode, emitting headings and interactive elements.
+
+		Key differences from ``serialize_tree`` (classic):
+		  - Does NOT emit ``|SHADOW(open)|`` prefixes — shadow DOM is invisible.
+		  - Appends AX accessible-name annotations (``"label text"``) after
+		    interactive elements via ``_get_outline_ax_label``.
+		  - Only emits headings, interactive elements, and visible text —
+		    structural wrapper divs are traversed but not rendered.
+
+		This method is used both for landmark subtrees AND for landmarkless
+		pages (where it's called directly on the root node).
+		"""
 		from browser_use.dom.serializer.outline import _get_heading_level, _get_heading_text
 
 		# Skip subtrees belonging to a nested sub-region (they're serialized separately)
