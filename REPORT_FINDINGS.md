@@ -10,7 +10,7 @@ We implemented and iteratively refined a hierarchical outline serialization mode
 
 Web agents that drive browsers via LLMs face a fundamental bottleneck: raw DOM trees can exceed 1M tokens [7], yet even long-context models degrade on lengthy, unstructured observations.  Lee et al. (ICLR 2025) demonstrated this directly -- their LCoW framework showed that LLM agent performance "significantly degrades when they rely on lengthy, non-contextualized observations, such as HTML and accessibility trees" [8].  The mitigation strategies in the literature fall into three categories: DOM pruning (Mind2Web [9]), contextualization modules (LCoW [8]), and structured formatting -- the approach we pursue here.
 
-browser-use's existing "classic" serializer compresses the DOM to interactive elements with tag/attribute annotations, achieving strong results: 89.1% on WebVoyager with GPT-4o [10] (since surpassed by Magnitude at 93.9% [11]).  Our work asks whether *hierarchically structuring* this already-compressed output can further improve action selection accuracy.
+browser-use's existing "classic" serializer compresses the DOM to interactive elements with tag/attribute annotations, achieving a self-reported 89.1% on WebVoyager with GPT-4o [10].  This number warrants context: browser-use's evaluation involved manual correction of the LLM judge's verdicts, removal of 55 infeasible tasks, and date adjustments -- and the project has published no formal paper, only a blog-style technical report [10].  Independent evaluation by Xu et al. (2025) found browser-use scoring 30% on Online-Mind2Web (a harder, human-evaluated benchmark), noting that "many recent agents [...] do not outperform the simple SeeAct agent" and that a trivial search-only baseline already achieves 51% on WebVoyager [27].  Magnitude has since claimed 93.9% on WebVoyager [11].  browser-use has not published WebArena results.  Our work does not re-evaluate these external claims; instead, we ask a narrower question: whether *hierarchically structuring* the serializer's output can improve action selection accuracy on controlled local tasks.
 
 ### 1.2 Theoretical Motivation
 
@@ -133,7 +133,13 @@ Outline v4 uses ~22% more tokens than classic v2 (38,876 vs 31,945) due to acces
 
 4. **Per-step traces are the primary diagnostic tool.**  Aggregate pass/fail metrics identify *that* something broke; trace-level `dom_text` and `action_names` identify *why*.  This observability principle is well-established in agent evaluation [18, 19] but absent from most open-source agent frameworks.
 
-### 4.2 Limitations
+### 4.2 On Browser-Use's Own Benchmark Claims
+
+browser-use has published two benchmark reports: the original WebVoyager evaluation (89.1%, December 2024 [10]) and a broader 100-task benchmark comparing models (January 2026 [28]).  Neither is peer-reviewed; both are blog posts on browser-use.com.  The WebVoyager report involved manual judge corrections, date adjustments, and removal of 55 tasks -- methodological choices that make the headline number hard to compare with other agents evaluated under stricter protocols.  Xu et al. [27] found browser-use at 30% on Online-Mind2Web under human evaluation, a significant gap.  The newer 100-task benchmark [28] is more rigorous (multiple trials, error bars, 87% judge-human alignment), but tests a curated mix from WebBench/Mind2Web/GAIA/BrowseComp rather than a standardized suite.
+
+browser-use has never published WebArena results.  Given that WebArena Verified [18] is the closest thing the field has to a standardized, deterministic, human-audited benchmark, this is a notable gap for any agent claiming SOTA.  Our internal 9-task suite makes no external comparability claims; it exists to detect serialization regressions, not to establish absolute performance.
+
+### 4.3 Limitations
 
 - **Single trial per task**: With n=1, results are subject to model non-determinism.  Multi-trial runs with bootstrap confidence intervals are needed for statistical claims, as recommended by WebArena Verified [18].
 - **Single model**: gpt-oss-20b only.  The Plan 3 thesis -- that outline mode disproportionately benefits smaller models, as suggested by the prompt-format literature [13, 15] -- remains untested.
@@ -176,7 +182,7 @@ These are documented inline in the codebase (module docstrings) but summarized h
 - [7] Agentic LLM cost analysis. "DOM trees can potentially exceed 1M tokens [...] a GPT-4.1-based agent for a single 20-step task could cost roughly $402." [arXiv:2506.10953](https://arxiv.org/pdf/2506.10953), 2025.
 - [8] D. Lee et al., "Learning to Contextualize Web Pages for Enhanced Decision Making by LLM Agents," ICLR 2025. [arXiv:2503.10689](https://arxiv.org/abs/2503.10689). [Code](https://github.com/dgjun32/lcow_iclr2025).
 - [9] X. Deng et al., "Mind2Web: Towards a Generalist Agent for the Web," NeurIPS 2023 Spotlight. [Project](https://osu-nlp-group.github.io/Mind2Web/).
-- [10] browser-use, "State of the Art Web Agent," Technical Report, December 2024. [browser-use.com](https://browser-use.com/posts/sota-technical-report).
+- [10] browser-use, "State of the Art Web Agent," Technical Report (blog post, not peer-reviewed), December 2024. [browser-use.com](https://browser-use.com/posts/sota-technical-report). Claims 89.1% on WebVoyager with manual judge corrections and 55 removed tasks; no WebArena results published. See [27] for independent evaluation.
 - [11] Magnitude, "SOTA 94% on WebVoyager benchmark." [GitHub](https://github.com/magnitudedev/webvoyager).
 - [12] G. A. Miller, "The Magical Number Seven, Plus or Minus Two: Some Limits on Our Capacity for Processing Information," *Psychological Review*, 63(2), 81-97, 1956. [APA](https://psycnet.apa.org/record/1957-02914-001). [Full text](https://psychclassics.yorku.ca/Miller/).
 - [13] A. Srivastava et al., "Does Prompt Formatting Have Any Impact on LLM Performance?" November 2024. [arXiv:2411.10541](https://arxiv.org/abs/2411.10541).
@@ -193,3 +199,5 @@ These are documented inline in the codebase (module docstrings) but summarized h
 - [24] "LLM Web Agent: Adaptive web agent using accessibility trees," GitHub. [github.com](https://github.com/suhaibbinyounis/llm-web-agent).
 - [25] "WebBench: Benchmark your browser agent on ~2.5k READ and ACTION based tasks." [GitHub](https://github.com/Halluminate/WebBench).
 - [26] "WebChoreArena: Evaluating Web Browsing Agents on Realistic Tedious Web Tasks." [webchorearena.github.io](https://webchorearena.github.io/). [OpenReview](https://openreview.net/forum?id=d0xqdsR41U).
+- [27] Z. Xu et al., "An Illusion of Progress? Assessing the Current State of Web Agents," April 2025. [arXiv:2504.01382](https://arxiv.org/abs/2504.01382). Finds browser-use scores 30% on Online-Mind2Web; a trivial search baseline achieves 51% on WebVoyager.
+- [28] browser-use, "Browser Agent Benchmark: Comparing LLM Models for Web Automation," blog post (not peer-reviewed), January 2026. [browser-use.com](https://browser-use.com/posts/ai-browser-agent-benchmark). [GitHub](https://github.com/browser-use/benchmark). 100-task curated mix with error bars and 87% judge-human alignment.
