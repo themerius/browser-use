@@ -135,9 +135,15 @@ Outline v4 uses ~22% more tokens than classic v2 (38,876 vs 31,945) due to acces
 
 ### 4.2 On Browser-Use's Own Benchmark Claims
 
-browser-use has published two benchmark reports: the original WebVoyager evaluation (89.1%, December 2024 [10]) and a broader 100-task benchmark comparing models (January 2026 [28]).  Neither is peer-reviewed; both are blog posts on browser-use.com.  The WebVoyager report involved manual judge corrections, date adjustments, and removal of 55 tasks -- methodological choices that make the headline number hard to compare with other agents evaluated under stricter protocols.  Xu et al. [27] found browser-use at 30% on Online-Mind2Web under human evaluation, a significant gap.  The newer 100-task benchmark [28] is more rigorous (multiple trials, error bars, 87% judge-human alignment), but tests a curated mix from WebBench/Mind2Web/GAIA/BrowseComp rather than a standardized suite.
+browser-use has **no formal academic publication** -- no arxiv paper, no peer-reviewed venue.  It is cited in academic works (e.g. [27, 19]) via a blog-style technical report at browser-use.com [10].  The project has published two benchmark reports:
 
-browser-use has never published WebArena results.  Given that WebArena Verified [18] is the closest thing the field has to a standardized, deterministic, human-audited benchmark, this is a notable gap for any agent claiming SOTA.  Our internal 9-task suite makes no external comparability claims; it exists to detect serialization regressions, not to establish absolute performance.
+1. **WebVoyager 89.1%** (December 2024 [10]): GPT-4o, with manual correction of the LLM judge's verdicts, removal of 55 infeasible tasks, and date adjustments.  These methodological choices make the headline number hard to compare with agents evaluated under stricter protocols.
+
+2. **100-task curated benchmark** (January 2026 [28]): More rigorous -- multiple trials, error bars, 87% judge-human alignment.  Tests a curated mix from WebBench/Mind2Web/GAIA/BrowseComp plus 20 custom tasks.  Open-sourced at github.com/browser-use/benchmark.
+
+Independent evaluation paints a different picture.  Xu et al. ("An Illusion of Progress?", 2025 [27]) tested browser-use on Online-Mind2Web under human evaluation and found **30% success** -- a 59pp gap from the self-reported WebVoyager number.  The same paper showed a trivial search-only baseline achieves 51% on WebVoyager, questioning the benchmark's difficulty and noting that "many recent agents [...] do not outperform the simple SeeAct agent."
+
+browser-use has **never published WebArena results**.  Given that WebArena Verified [18] is the closest thing the field has to a standardized, deterministic, human-audited benchmark (812 tasks, backend state verification, no LLM judge), this is a notable gap for any agent claiming SOTA.  Our internal 9-task suite makes no external comparability claims; it exists to detect serialization regressions, not to establish absolute performance.
 
 ### 4.3 Limitations
 
@@ -146,7 +152,7 @@ browser-use has never published WebArena results.  Given that WebArena Verified 
 - **9-task suite**: A narrow benchmark.  WebArena Verified (812 tasks [18]) or WebBench (5,750 tasks [25]) would provide externally comparable numbers.  Our suite catches regressions but cannot establish general claims.
 - **No vision mode**: All runs used `--no-vision`.  The interaction between outline formatting and multimodal (DOM + screenshot) agents is unexplored.
 
-### 4.3 Traps for Future Development
+### 4.4 Traps for Future Development
 
 These are documented inline in the codebase (module docstrings) but summarized here:
 
