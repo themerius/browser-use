@@ -7,9 +7,14 @@ from pathlib import Path
 BASELINES_DIR = Path(__file__).parent / 'baselines'
 
 
+def _model_filename(model: str) -> str:
+	"""Sanitize model name for use as a filename (replace / with __)."""
+	return model.replace('/', '__')
+
+
 def load_baseline(model: str) -> dict | None:
 	"""Load a stored baseline for the given model. Returns None if not found."""
-	path = BASELINES_DIR / f'{model}.json'
+	path = BASELINES_DIR / f'{_model_filename(model)}.json'
 	if not path.exists():
 		return None
 	with open(path, encoding='utf-8') as f:
@@ -19,7 +24,7 @@ def load_baseline(model: str) -> dict | None:
 def save_baseline(model: str, results: dict) -> None:
 	"""Save benchmark results as a baseline for the given model."""
 	BASELINES_DIR.mkdir(parents=True, exist_ok=True)
-	path = BASELINES_DIR / f'{model}.json'
+	path = BASELINES_DIR / f'{_model_filename(model)}.json'
 
 	results['timestamp'] = datetime.now(timezone.utc).isoformat()
 	results['model'] = model
@@ -43,6 +48,7 @@ def compare(current: dict, baseline: dict) -> dict:
 
 	metrics_config = {
 		'pass_rate': {'format': 'pp', 'better': 'higher'},
+		'avg_score': {'format': 'float', 'better': 'higher'},
 		'avg_steps': {'format': 'float', 'better': 'lower'},
 		'avg_tokens': {'format': 'int', 'better': 'lower'},
 		'avg_cost': {'format': 'float', 'better': 'lower'},
@@ -90,6 +96,7 @@ def compare(current: dict, baseline: dict) -> dict:
 		base_task = baseline_tasks[task_name]
 		task_deltas[task_name] = {
 			'pass_rate_delta': cur_task.get('pass_rate', 0) - base_task.get('pass_rate', 0),
+			'avg_score_delta': cur_task.get('avg_score', 0) - base_task.get('avg_score', 0),
 			'avg_steps_delta': cur_task.get('avg_steps', 0) - base_task.get('avg_steps', 0),
 			'avg_tokens_delta': cur_task.get('avg_tokens', 0) - base_task.get('avg_tokens', 0),
 		}

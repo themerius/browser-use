@@ -1,13 +1,28 @@
-"""Benchmark orchestrator: loads tasks, runs trials, collects metrics."""
+"""Benchmark orchestrator: loads tasks, runs trials, collects metrics.
+
+CLI flags relevant to this module:
+    --trace         Write per-step JSONL trace files (see ``benchmarks/trace.py``)
+    --compare-dom   Skip agent runs; just compare classic vs outline serialization
+                    (see ``benchmarks/compare_dom.py``)
+
+The runner returns a results dict consumed by ``benchmarks/report.py`` for
+Markdown/JSON report generation.
+"""
+
+from __future__ import annotations
 
 import logging
 import os
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from pytest_httpserver import HTTPServer
+
+if TYPE_CHECKING:
+	from browser_use.agent.views import AgentHistoryList
 
 import benchmarks.fixtures as fixtures_module
 from benchmarks.baseline import compare, load_baseline, save_baseline
@@ -58,35 +73,75 @@ def _evaluate_result(
 	expected_result: dict | None,
 	downloads_path: str | None,
 	model: str = 'mock',
-) -> bool:
+) -> tuple[bool, float, dict[str, bool]]:
 	"""Evaluate whether a run meets the programmatic success criteria.
+
+	Returns:
+		Tuple of (passed, score, criteria_met) where:
+		- passed: True only if ALL criteria are satisfied
+		- score: 0.0–1.0 fraction of criteria met (partial credit)
+		- criteria_met: per-criterion breakdown {name: bool}
 
 	In mock mode, files_downloaded is tracked as a metric but not used for
 	pass/fail since mock actions can't trigger real DOM interactions reliably.
 	With real LLMs, files_downloaded is enforced.
+
+	**Pitfall — ``contains`` checks the agent's ``done`` text, not the page**:
+
+	  The ``contains`` criterion is matched against the text the LLM passes to
+	  the ``done(text=...)`` action.  This means pass/fail depends on *how the
+	  model phrases its summary*, not on what the page actually displayed.
+
+	  Example: Dropdown Interaction's confirm page shows ``"Order Confirmed!"``
+	  but the model might only quote the body paragraph
+	  (``"Your order for the Pro Plan has been placed successfully."``),
+	  omitting the heading.  If ``expected_result.contains`` is
+	  ``["Order Confirmed"]``, the task fails despite the page being correct.
+
+	  Mitigations:
+	    1. Make fixtures validate server-side (use callable handlers that
+	       check POST/query values — see ``benchmarks/conftest.py`` docstring).
+	    2. Choose ``contains`` needles that are likely to appear in any
+	       reasonable summary (e.g. a product name rather than a heading).
+	    3. Consider adding a ``page_contains`` criterion that checks the
+	       actual page HTML/text at the final URL, not the model's summary.
 	"""
 	if expected_result is None:
 		# No criteria specified, use agent's own success assessment
-		return history.is_successful() is True
+		passed = history.is_successful() is True
+		return passed, 1.0 if passed else 0.0, {'agent_self_assessment': passed}
 
+	criteria_met: dict[str, bool] = {}
 	final = history.final_result() or ''
+	final_lower = final.lower()
 
-	# Check contains criteria
+	# Check contains criteria (case-insensitive to handle LLM phrasing variation)
 	contains = expected_result.get('contains', [])
 	for needle in contains:
-		if needle not in final:
+		key = f'contains:{needle}'
+		found = needle.lower() in final_lower
+		criteria_met[key] = found
+		if not found:
 			logger.info(f'  FAIL: expected result to contain {needle!r}, got: {final[:200]}')
-			return False
 
 	# Check files_downloaded (enforced only with real LLMs)
 	expected_downloads = expected_result.get('files_downloaded')
 	if expected_downloads is not None and downloads_path is not None and model != 'mock':
 		actual = _count_downloads(downloads_path)
-		if actual < expected_downloads:
+		met = actual >= expected_downloads
+		criteria_met[f'files_downloaded>={expected_downloads}'] = met
+		if not met:
 			logger.info(f'  FAIL: expected {expected_downloads} downloads, found {actual}')
-			return False
 
-	return True
+	# Compute partial score
+	if criteria_met:
+		n_met = sum(1 for v in criteria_met.values() if v)
+		score = n_met / len(criteria_met)
+	else:
+		score = 1.0  # No criteria = vacuously satisfied
+
+	passed = all(criteria_met.values()) if criteria_met else True
+	return passed, score, criteria_met
 
 
 async def _run_single_trial(
@@ -95,11 +150,16 @@ async def _run_single_trial(
 	model: str,
 	server: HTTPServer,
 	trial_num: int,
-) -> tuple[TaskRunMetrics, int]:
+	outline_mode: bool = False,
+	use_vision: bool = True,
+) -> tuple[TaskRunMetrics, int, AgentHistoryList | None]:
 	"""Run a single trial of a benchmark task.
 
 	Returns:
-		Tuple of (metrics, actual_download_count).
+		Tuple of (metrics, actual_download_count, history).
+		``history`` is the full ``AgentHistoryList`` — used by ``--trace`` to
+		write per-step JSONL logs.  It is ``None`` when the trial errors out
+		before the agent produces any history.
 	"""
 	from browser_use import Agent
 
@@ -126,9 +186,16 @@ async def _run_single_trial(
 		if model == 'mock':
 			mock_actions = task.get('mock_actions')
 			llm = _create_mock_llm(actions=mock_actions)
+		elif '/' in model:
+			# Model names containing '/' are routed through OpenRouter
+			# e.g. 'openai/gpt-oss-20b', 'anthropic/claude-3.5-sonnet'
+			from browser_use.llm import ChatOpenRouter
+
+			api_key = os.environ.get('OPENROUTER_API_KEY', '').strip()
+			assert api_key, 'OPENROUTER_API_KEY must be set for OpenRouter models'
+			llm = ChatOpenRouter(model=model, api_key=api_key)
 		else:
 			# Real LLM mode — use ChatOpenAI as default provider.
-			# For other providers, extend with provider-prefixed model names.
 			from browser_use.llm import ChatOpenAI
 
 			llm = ChatOpenAI(model=model)
@@ -139,6 +206,8 @@ async def _run_single_trial(
 			task=task_str,
 			llm=llm,
 			browser_session=session,
+			outline_mode=outline_mode,
+			use_vision=use_vision,
 		)
 
 		history = await agent.run(max_steps=max_steps)
@@ -148,11 +217,15 @@ async def _run_single_trial(
 
 		# Override success based on programmatic evaluation
 		expected_result = task.get('expected_result')
-		programmatic_success = _evaluate_result(history, expected_result, downloads_dir, model=model)
+		passed, score, criteria_met = _evaluate_result(history, expected_result, downloads_dir, model=model)
 		actual_downloads = _count_downloads(downloads_dir)
-		metrics = metrics.model_copy(update={'success': programmatic_success})
+		metrics = metrics.model_copy(update={
+			'success': passed,
+			'score': score,
+			'criteria_met': criteria_met,
+		})
 
-		return metrics, actual_downloads
+		return metrics, actual_downloads, history
 
 	except Exception as e:
 		logger.error(f'  Trial {trial_num} of {task_name!r} failed: {e}')
@@ -171,7 +244,8 @@ async def _run_single_trial(
 			action_distribution={},
 			urls_visited=[],
 			final_result=str(e),
-		), 0
+			error_messages=[str(e)],
+		), 0, None
 	finally:
 		await session.kill()
 		await session.event_bus.stop(clear=True, timeout=5)
@@ -184,6 +258,9 @@ async def run_benchmark(
 	output_dir: str | Path = 'benchmarks/reports',
 	save_baseline_flag: bool = False,
 	compare_baseline_flag: bool = True,
+	outline_mode: bool = False,
+	use_vision: bool = True,
+	trace: bool = False,
 ) -> dict:
 	"""Run the full benchmark suite.
 
@@ -194,6 +271,9 @@ async def run_benchmark(
 		output_dir: Directory for report output.
 		save_baseline_flag: If True, save results as baseline.
 		compare_baseline_flag: If True, compare against stored baseline.
+		outline_mode: If True, use hierarchical outline DOM serialization.
+		use_vision: If True, include screenshots in LLM context.
+		trace: If True, write per-step JSONL trace files (see ``benchmarks/trace.py``).
 
 	Returns:
 		Full results dict.
@@ -233,9 +313,16 @@ async def run_benchmark(
 			trial_metrics: list[TaskRunMetrics] = []
 			trial_download_counts: list[int] = []
 			for trial_num in range(1, trials + 1):
-				metrics, download_count = await _run_single_trial(task, fixture_dict, model, server, trial_num)
+				metrics, download_count, history = await _run_single_trial(task, fixture_dict, model, server, trial_num, outline_mode=outline_mode, use_vision=use_vision)
 				trial_metrics.append(metrics)
 				trial_download_counts.append(download_count)
+
+				# Write per-step trace if requested
+				if trace and history is not None:
+					from benchmarks.trace import write_trace
+					trace_dir = Path(output_dir) / 'traces'
+					trace_path = write_trace(history, trace_dir, task_name, trial_num)
+					logger.info(f'    Trace written to {trace_path}')
 
 			# Aggregate
 			agg = aggregate_metrics(trial_metrics)
@@ -245,9 +332,26 @@ async def run_benchmark(
 			expected_result = task.get('expected_result', {}) or {}
 			files_downloaded_expected = expected_result.get('files_downloaded')
 
+			# Collect failure diagnostics from individual trials
+			all_errors: list[str] = []
+			per_trial_diagnostics: list[dict] = []
+			dom_char_counts: list[int] = []
+			for t in trial_metrics:
+				all_errors.extend(t.error_messages)
+				per_trial_diagnostics.append({
+					'success': t.success,
+					'final_result': t.final_result,
+					'error_messages': t.error_messages,
+					'last_model_reasoning': t.last_model_reasoning,
+					'dom_text_chars': t.dom_text_chars,
+				})
+				if t.dom_text_chars is not None:
+					dom_char_counts.append(t.dom_text_chars)
+
 			task_result = {
 				'n_trials': agg.n_trials,
 				'pass_rate': agg.pass_rate,
+				'avg_score': agg.avg_score,
 				'avg_steps': agg.avg_steps,
 				'std_steps': agg.std_steps,
 				'avg_tokens': agg.avg_tokens,
@@ -256,6 +360,10 @@ async def run_benchmark(
 				'avg_duration': agg.avg_duration,
 				'avg_error_rate': agg.avg_error_rate,
 				'action_distribution': agg.action_distribution,
+				# Failure diagnostics — useful for debugging failed tasks
+				'error_messages': all_errors,
+				'trial_diagnostics': per_trial_diagnostics,
+				'avg_dom_text_chars': int(sum(dom_char_counts) / len(dom_char_counts)) if dom_char_counts else None,
 			}
 			if files_downloaded_expected is not None:
 				task_result['files_downloaded_expected'] = files_downloaded_expected
@@ -265,7 +373,7 @@ async def run_benchmark(
 			all_task_results[task_name] = task_result
 
 			logger.info(
-				f'  {task_name}: pass_rate={agg.pass_rate:.0%}, avg_steps={agg.avg_steps:.1f}, avg_tokens={agg.avg_tokens:.0f}'
+				f'  {task_name}: pass_rate={agg.pass_rate:.0%}, avg_score={agg.avg_score:.2f}, avg_steps={agg.avg_steps:.1f}, avg_tokens={agg.avg_tokens:.0f}'
 			)
 
 		finally:
@@ -279,6 +387,7 @@ async def run_benchmark(
 		total_passes = sum(a.pass_rate * a.n_trials for a in all_aggregates)
 		suite_aggregate = {
 			'pass_rate': total_passes / total_trials if total_trials > 0 else 0,
+			'avg_score': sum(a.avg_score * a.n_trials for a in all_aggregates) / total_trials if total_trials > 0 else 0,
 			'avg_steps': sum(a.avg_steps for a in all_aggregates) / len(all_aggregates),
 			'avg_tokens': sum(a.avg_tokens for a in all_aggregates) / len(all_aggregates),
 			'avg_cost': sum(a.avg_cost for a in all_aggregates) / len(all_aggregates),
@@ -289,6 +398,7 @@ async def run_benchmark(
 
 	results = {
 		'model': model,
+		'outline_mode': outline_mode,
 		'trials_per_task': trials,
 		'tasks': all_task_results,
 		'aggregate': suite_aggregate,

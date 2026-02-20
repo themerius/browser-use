@@ -89,6 +89,11 @@ class AgentSettings(BaseModel):
 	loop_detection_window: int = 20  # Rolling window size for action similarity tracking
 	loop_detection_enabled: bool = True  # Whether to enable loop detection nudges
 
+	# Outline serialization (Plan 3)
+	outline_mode: bool = False
+	"""Use hierarchical landmark-grouped outline for DOM serialization instead of flat element list.
+	Experimental: may improve navigation on complex pages, especially with smaller models."""
+
 
 class PageFingerprint(BaseModel):
 	"""Lightweight fingerprint of the browser page state."""

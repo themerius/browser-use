@@ -1,4 +1,31 @@
-# @file purpose: Serializes enhanced DOM trees to string format for LLM consumption
+# @file purpose: Serializes enhanced DOM trees to string format for LLM consumption.
+#
+# Two serialization modes:
+#
+#   1. **Classic** (``serialize_tree``): Flat rendering of the DOM tree.  Every
+#      visible element is emitted with its tag, attributes, and text.  Shadow
+#      hosts are annotated with ``|SHADOW(open)|`` / ``|SHADOW(closed)|``
+#      prefixes — including browser-internal shadow roots on native form
+#      elements like ``<select>`` and ``<input>``.
+#
+#   2. **Outline** (``serialize_outline_tree``): Groups interactive elements
+#      under semantic landmark regions (BANNER, NAV, MAIN, etc.) with heading
+#      hierarchy.  Uses ``_serialize_outline_subtree`` which:
+#        - Omits ``|SHADOW(…)|`` prefixes entirely (avoids confusing native
+#          browser shadow DOM with author-created web components).
+#        - Appends AX accessible-name annotations (e.g. ``"Select Product:"``)
+#          after interactive elements, giving the LLM label context.
+#
+#      **Landmarkless pages**: When no semantic landmarks are detected, outline
+#      mode uses ``_serialize_outline_subtree`` directly on the root — it does
+#      NOT fall back to classic ``serialize_tree``.  This was a deliberate
+#      decision after benchmarking showed that falling back to classic caused
+#      LLMs to use ``click`` instead of ``select_dropdown`` on native
+#      ``<select>`` elements, because the ``|SHADOW(open)|`` prefix misled the
+#      model into treating it as a custom web component.
+#      See: benchmarks/reports/outline_v3 vs outline_v4 for evidence.
+
+from __future__ import annotations
 
 from typing import Any
 
@@ -881,7 +908,15 @@ class DOMTreeSerializer:
 
 	@staticmethod
 	def serialize_tree(node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
-		"""Serialize the optimized tree to string format."""
+		"""Serialize the optimized tree to classic flat string format.
+
+		NOTE: This emits ``|SHADOW(open)|`` prefixes on ALL shadow hosts,
+		including native form elements (``<select>``, ``<input>``, etc.)
+		whose shadow roots are browser-internal implementation details.
+		This is known to confuse LLMs into using ``click`` instead of
+		``select_dropdown`` on native ``<select>`` elements.  Outline mode
+		avoids this — see ``serialize_outline_tree`` and its module docstring.
+		"""
 		if not node:
 			return ''
 
@@ -951,39 +986,12 @@ class DOMTreeSerializer:
 				)
 
 				# Add compound component information to attributes if present
-				if node.original_node._compound_children:
-					compound_info = []
-					for child_info in node.original_node._compound_children:
-						parts = []
-						if child_info['name']:
-							parts.append(f'name={child_info["name"]}')
-						if child_info['role']:
-							parts.append(f'role={child_info["role"]}')
-						if child_info['valuemin'] is not None:
-							parts.append(f'min={child_info["valuemin"]}')
-						if child_info['valuemax'] is not None:
-							parts.append(f'max={child_info["valuemax"]}')
-						if child_info['valuenow'] is not None:
-							parts.append(f'current={child_info["valuenow"]}')
-
-						# Add select-specific information
-						if 'options_count' in child_info and child_info['options_count'] is not None:
-							parts.append(f'count={child_info["options_count"]}')
-						if 'first_options' in child_info and child_info['first_options']:
-							options_str = '|'.join(child_info['first_options'][:4])  # Limit to 4 options
-							parts.append(f'options={options_str}')
-						if 'format_hint' in child_info and child_info['format_hint']:
-							parts.append(f'format={child_info["format_hint"]}')
-
-						if parts:
-							compound_info.append(f'({",".join(parts)})')
-
-					if compound_info:
-						compound_attr = f'compound_components={",".join(compound_info)}'
-						if attributes_html_str:
-							attributes_html_str += f' {compound_attr}'
-						else:
-							attributes_html_str = compound_attr
+				compound_attr = DOMTreeSerializer._build_compound_string(node.original_node)
+				if compound_attr:
+					if attributes_html_str:
+						attributes_html_str += f' {compound_attr}'
+					else:
+						attributes_html_str = compound_attr
 
 				# Build the line with shadow host indicator
 				shadow_prefix = ''
@@ -1083,6 +1091,285 @@ class DOMTreeSerializer:
 					formatted_text.append(f'{depth_str}... (more content below viewport - scroll to reveal)')
 
 		return '\n'.join(formatted_text)
+
+	@staticmethod
+	def _build_compound_string(node: EnhancedDOMTreeNode) -> str:
+		"""Build a compound_components attribute string for an interactive element.
+
+		Extracts select options, slider ranges, date format hints, etc. from
+		the node's ``_compound_children``.  Returns an empty string when no
+		compound info is available.
+		"""
+		if not node._compound_children:
+			return ''
+
+		compound_info: list[str] = []
+		for child_info in node._compound_children:
+			parts: list[str] = []
+			if child_info['name']:
+				parts.append(f'name={child_info["name"]}')
+			if child_info['role']:
+				parts.append(f'role={child_info["role"]}')
+			if child_info['valuemin'] is not None:
+				parts.append(f'min={child_info["valuemin"]}')
+			if child_info['valuemax'] is not None:
+				parts.append(f'max={child_info["valuemax"]}')
+			if child_info['valuenow'] is not None:
+				parts.append(f'current={child_info["valuenow"]}')
+
+			# Select-specific information
+			if 'options_count' in child_info and child_info['options_count'] is not None:
+				parts.append(f'count={child_info["options_count"]}')
+			if 'first_options' in child_info and child_info['first_options']:
+				options_str = '|'.join(child_info['first_options'][:4])  # Limit to 4 options
+				parts.append(f'options={options_str}')
+			if 'format_hint' in child_info and child_info['format_hint']:
+				parts.append(f'format={child_info["format_hint"]}')
+
+			if parts:
+				compound_info.append(f'({",".join(parts)})')
+
+		if compound_info:
+			return f'compound_components={",".join(compound_info)}'
+		return ''
+
+	@staticmethod
+	def serialize_outline_tree(
+		node: SimplifiedNode | None,
+		include_attributes: list[str],
+	) -> str:
+		"""Serialize the DOM tree in hierarchical outline mode.
+
+		Groups interactive elements under landmark regions (BANNER, NAV, MAIN,
+		etc.) and annotates with heading hierarchy.  Pages without any
+		landmarks use outline subtree rendering directly (no landmark
+		grouping but preserves accessible labels and clean formatting).
+		"""
+		from browser_use.dom.serializer.outline import detect_landmarks
+
+		if not node:
+			return ''
+
+		landmarks = detect_landmarks(node)
+
+		# No landmarks detected — use outline subtree rendering directly.
+		# We do NOT fall back to raw classic serialization because classic
+		# mode introduces |SHADOW(open)| noise on native form elements and
+		# omits accessible-name annotations, both of which degrade LLM
+		# action selection (e.g. model picks click instead of select_dropdown).
+		if not landmarks:
+			lines: list[str] = []
+			DOMTreeSerializer._serialize_outline_subtree(
+				node, include_attributes, lines, depth=0, skip_root=True,
+			)
+			return '\n'.join(lines)
+
+		# Collect nodes that belong to a landmark (by id) so we can detect orphans
+		landmark_node_ids: set[int] = set()
+		for lm in landmarks:
+			DOMTreeSerializer._collect_node_ids(lm.node, landmark_node_ids)
+
+		lines: list[str] = ['=== PAGE OUTLINE ===']
+
+		for lm in landmarks:
+			header = lm.role.upper()
+			if lm.name:
+				header += f': "{lm.name}"'
+
+			# Collect sub-region node ids to avoid duplicating elements
+			sub_region_ids: set[int] = set()
+			for sub in lm.sub_regions:
+				DOMTreeSerializer._collect_node_ids(sub.node, sub_region_ids)
+
+			lines.append(f'{header}:')
+			DOMTreeSerializer._serialize_outline_subtree(
+				lm.node, include_attributes, lines, depth=1, skip_root=True,
+				exclude_ids=sub_region_ids or None,
+			)
+
+			# Nested sub-regions
+			for sub in lm.sub_regions:
+				sub_header = f'  {sub.role.upper()}'
+				if sub.name:
+					sub_header += f': "{sub.name}"'
+				lines.append(f'{sub_header}:')
+				DOMTreeSerializer._serialize_outline_subtree(
+					sub.node, include_attributes, lines, depth=2, skip_root=True,
+				)
+
+		# Orphan elements — not inside any landmark
+		orphan_lines: list[str] = []
+		DOMTreeSerializer._collect_orphan_elements(
+			node, include_attributes, orphan_lines, landmark_node_ids, depth=1,
+		)
+		if orphan_lines:
+			lines.append('(ungrouped):')
+			lines.extend(orphan_lines)
+
+		lines.append('=== END OUTLINE ===')
+		return '\n'.join(lines)
+
+	@staticmethod
+	def _collect_node_ids(node: SimplifiedNode, ids: set[int]) -> None:
+		"""Recursively collect all node IDs in a subtree."""
+		ids.add(id(node))
+		for child in node.children:
+			DOMTreeSerializer._collect_node_ids(child, ids)
+
+	@staticmethod
+	def _get_outline_ax_label(node: SimplifiedNode) -> str | None:
+		"""Return the AX accessible name for a node if it adds useful context.
+
+		Used in outline mode to annotate interactive elements with their
+		associated label text (e.g. from <label for=...>, aria-label, etc.).
+		Returns None if the name is empty, trivial, or already covered by
+		common attributes (placeholder, aria-label, title, value).
+		"""
+		ax = node.original_node.ax_node
+		if not ax or not ax.name:
+			return None
+		name = ax.name.strip()
+		if not name or len(name) <= 1:
+			return None
+
+		# Skip if the name duplicates an attribute the serializer already emits
+		attrs = node.original_node.attributes or {}
+		for attr_key in ('placeholder', 'aria-label', 'title', 'value', 'alt'):
+			if str(attrs.get(attr_key, '')).strip().lower() == name.lower():
+				return None
+
+		return cap_text_length(name, 80)
+
+	@staticmethod
+	def _serialize_outline_subtree(
+		node: SimplifiedNode,
+		include_attributes: list[str],
+		lines: list[str],
+		depth: int = 0,
+		skip_root: bool = False,
+		exclude_ids: set[int] | None = None,
+	) -> None:
+		"""Serialize a subtree for outline mode, emitting headings and interactive elements.
+
+		Key differences from ``serialize_tree`` (classic):
+		  - Does NOT emit ``|SHADOW(open)|`` prefixes — shadow DOM is invisible.
+		  - Appends AX accessible-name annotations (``"label text"``) after
+		    interactive elements via ``_get_outline_ax_label``.
+		  - Only emits headings, interactive elements, and visible text —
+		    structural wrapper divs are traversed but not rendered.
+
+		This method is used both for landmark subtrees AND for landmarkless
+		pages (where it's called directly on the root node).
+		"""
+		from browser_use.dom.serializer.outline import _get_heading_level, _get_heading_text
+
+		# Skip subtrees belonging to a nested sub-region (they're serialized separately)
+		if exclude_ids and id(node) in exclude_ids:
+			return
+
+		indent = '\t' * depth
+
+		if not skip_root:
+			# Check if this is a heading
+			heading_level = _get_heading_level(node)
+			if heading_level is not None:
+				heading_text = _get_heading_text(node)
+				md_prefix = '#' * heading_level
+				lines.append(f'{indent}{md_prefix} {heading_text}')
+			elif node.is_interactive:
+				# Interactive element — use same format as flat serializer
+				# plus ax_name annotation for label context
+				new_prefix = '*' if node.is_new else ''
+				tag = node.original_node.tag_name
+				ax_name = DOMTreeSerializer._get_outline_ax_label(node)
+				attrs_str = DOMTreeSerializer._build_attributes_string(
+					node.original_node, include_attributes, ax_name or '',
+				)
+				# Add compound component info (select options, slider ranges, etc.)
+				compound_attr = DOMTreeSerializer._build_compound_string(node.original_node)
+				if compound_attr:
+					attrs_str = f'{attrs_str} {compound_attr}' if attrs_str else compound_attr
+				line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
+				if attrs_str:
+					line += f' {attrs_str}'
+				line += ' />'
+				# Append accessible name if it adds information beyond attributes
+				if ax_name:
+					line += f'  "{ax_name}"'
+				lines.append(line)
+			elif node.original_node.node_type == NodeType.TEXT_NODE:
+				is_visible = node.original_node.snapshot_node and node.original_node.is_visible
+				if (
+					is_visible
+					and node.original_node.node_value
+					and node.original_node.node_value.strip()
+					and len(node.original_node.node_value.strip()) > 1
+				):
+					lines.append(f'{indent}{node.original_node.node_value.strip()}')
+
+		# Recurse into children
+		child_depth = depth if skip_root else depth + 1
+		for child in node.children:
+			DOMTreeSerializer._serialize_outline_subtree(
+				child, include_attributes, lines, child_depth,
+				exclude_ids=exclude_ids,
+			)
+
+	@staticmethod
+	def _collect_orphan_elements(
+		node: SimplifiedNode,
+		include_attributes: list[str],
+		lines: list[str],
+		landmark_node_ids: set[int],
+		depth: int = 0,
+	) -> None:
+		"""Collect interactive/heading elements not inside any landmark."""
+		from browser_use.dom.serializer.outline import _get_heading_level, _get_heading_text
+
+		# If this node IS a landmark (is in the landmark set), skip it entirely
+		if id(node) in landmark_node_ids:
+			return
+
+		indent = '\t' * depth
+
+		heading_level = _get_heading_level(node)
+		if heading_level is not None:
+			heading_text = _get_heading_text(node)
+			md_prefix = '#' * heading_level
+			lines.append(f'{indent}{md_prefix} {heading_text}')
+		elif node.is_interactive:
+			new_prefix = '*' if node.is_new else ''
+			tag = node.original_node.tag_name
+			ax_name = DOMTreeSerializer._get_outline_ax_label(node)
+			attrs_str = DOMTreeSerializer._build_attributes_string(
+				node.original_node, include_attributes, ax_name or '',
+			)
+			# Add compound component info (select options, slider ranges, etc.)
+			compound_attr = DOMTreeSerializer._build_compound_string(node.original_node)
+			if compound_attr:
+				attrs_str = f'{attrs_str} {compound_attr}' if attrs_str else compound_attr
+			line = f'{indent}{new_prefix}[{node.original_node.backend_node_id}]<{tag}'
+			if attrs_str:
+				line += f' {attrs_str}'
+			line += ' />'
+			if ax_name:
+				line += f'  "{ax_name}"'
+			lines.append(line)
+		elif node.original_node.node_type == NodeType.TEXT_NODE:
+			is_visible = node.original_node.snapshot_node and node.original_node.is_visible
+			if (
+				is_visible
+				and node.original_node.node_value
+				and node.original_node.node_value.strip()
+				and len(node.original_node.node_value.strip()) > 1
+			):
+				lines.append(f'{indent}{node.original_node.node_value.strip()}')
+
+		# Recurse — increment depth to preserve parent-child nesting
+		for child in node.children:
+			DOMTreeSerializer._collect_orphan_elements(
+				child, include_attributes, lines, landmark_node_ids, depth + 1,
+			)
 
 	@staticmethod
 	def _build_attributes_string(node: EnhancedDOMTreeNode, include_attributes: list[str], text: str) -> str:

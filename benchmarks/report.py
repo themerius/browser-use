@@ -55,8 +55,8 @@ def generate_report(
 	lines.append('')
 
 	# Task table
-	lines.append('| Task | Pass Rate | Avg Steps | Avg Tokens | Avg Cost | Avg Duration | Downloads |')
-	lines.append('|------|-----------|-----------|------------|----------|--------------|-----------|')
+	lines.append('| Task | Pass Rate | Avg Score | Avg Steps | Avg Tokens | Avg Cost | Avg Duration | Downloads |')
+	lines.append('|------|-----------|-----------|-----------|------------|----------|--------------|-----------|')
 
 	tasks = results.get('tasks', {})
 	for task_name, task_data in tasks.items():
@@ -70,9 +70,11 @@ def generate_report(
 		else:
 			downloads_str = '\u2014'
 
+		avg_score = task_data.get('avg_score', 0.0)
 		lines.append(
 			f'| {task_name:<25} '
 			f'| {_fmt_pass_rate(passes, n_trials):<9} '
+			f'| {avg_score:<9.2f} '
 			f'| {_fmt_float(task_data.get("avg_steps", 0)):<9} '
 			f'| {_fmt_int(task_data.get("avg_tokens", 0)):<10} '
 			f'| {_fmt_cost(task_data.get("avg_cost", 0)):<8} '
@@ -92,6 +94,7 @@ def generate_report(
 
 		format_map = {
 			'pass_rate': lambda v: f'{v * 100:.1f}%',
+			'avg_score': lambda v: _fmt_float(v, 2),
 			'avg_steps': lambda v: _fmt_float(v),
 			'avg_tokens': lambda v: _fmt_int(v),
 			'avg_cost': lambda v: _fmt_cost(v),
@@ -100,6 +103,7 @@ def generate_report(
 
 		delta_format_map = {
 			'pass_rate': lambda d: f'{d * 100:+.1f}pp',
+			'avg_score': lambda d: f'{d:+.2f}',
 			'avg_steps': lambda d: f'{d:+.1f}',
 			'avg_tokens': lambda d: f'{d:+,.0f}',
 			'avg_cost': lambda d: f'{d:+.4f}',
@@ -108,6 +112,7 @@ def generate_report(
 
 		metric_labels = {
 			'pass_rate': 'Pass Rate',
+			'avg_score': 'Avg Score',
 			'avg_steps': 'Avg Steps',
 			'avg_tokens': 'Avg Tokens',
 			'avg_cost': 'Avg Cost',
@@ -134,6 +139,7 @@ def generate_report(
 		if agg:
 			lines.append('### Aggregate')
 			lines.append(f'- Pass Rate: {agg.get("pass_rate", 0) * 100:.1f}%')
+			lines.append(f'- Avg Score: {_fmt_float(agg.get("avg_score", 0), 2)}')
 			lines.append(f'- Avg Steps: {_fmt_float(agg.get("avg_steps", 0))}')
 			lines.append(f'- Avg Tokens: {_fmt_int(agg.get("avg_tokens", 0))}')
 			lines.append(f'- Avg Cost: {_fmt_cost(agg.get("avg_cost", 0))}')

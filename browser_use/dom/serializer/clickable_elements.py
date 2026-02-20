@@ -55,6 +55,10 @@ class ClickableElementDetector:
 		# Note: Size 0 elements can still be interactive (e.g., invisible clickable overlays)
 		# Visibility is determined separately by CSS styles, not just bounding box size
 
+		# Contenteditable elements are interactive (rich text editors, custom form fields)
+		if node.attributes and node.attributes.get('contenteditable') in ('true', '', 'plaintext-only'):
+			return True
+
 		# Specialized handling for labels used as component wrappers (e.g., Ant Design radio/checkbox)
 		if node.tag_name == 'label':
 			# Skip labels that proxy via "for" to avoid double-activating external inputs
